@@ -22,7 +22,7 @@ def scrape_matches(driver, season, round_num, progress_callback=None):
     """
     if progress_callback:
         progress_callback(10, "Initializing scraper...")
-
+    
     url_round = int(round_num) - 1
     url = f"{config.BASE_URL}?group=by-round&season={season}&round={url_round}"
     print(f"Navigating to: {url}")

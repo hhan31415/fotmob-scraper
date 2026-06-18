@@ -14,13 +14,13 @@ st.title("⚽ FotMob Football Scraper")
 st.markdown("Scrape Premier League match data by season and round")
 
 # Create two columns for inputs
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     season = st.text_input(
         "Season (Year-Year)", 
         value="2025-2026",
-        help="Format: YYYY-YYYY (e.g., 2025-2026)"
+        help="Format: YYYY-YYYY (e.g., 2025-2026), or YYYY for MLS"
     )
 
 with col2:
@@ -31,6 +31,17 @@ with col2:
         value=1,
         help="Select round number (1-38)"
     )
+
+with col3:
+    league = st.selectbox(
+        "League",
+        options=["Premier League", "MLS"],
+        help="Select a football league"
+    )
+if league == "MLS":
+    BASE_URL = "https://www.fotmob.com/leagues/130/fixtures/mls"
+elif league == "Premier League":
+    BASE_URL = "https://www.fotmob.com/leagues/47/fixtures/premier-league"
 
 # Initialize session state for matches
 if 'matches' not in st.session_state:
