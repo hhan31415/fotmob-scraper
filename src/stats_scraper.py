@@ -80,7 +80,8 @@ def _click_stats_tab(driver, wait):
         wait: WebDriverWait instance
     """
     try:
-        stats_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Stats')]")))
+        #stats_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Stats')]")))
+        stats_tab = wait.until(EC.element_to_be_clickable((By.XPATH, " //a[normalize-space(text())='Stats']")))
         stats_tab.click()
         time.sleep(3)
     except Exception as e:
