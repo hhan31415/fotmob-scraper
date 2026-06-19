@@ -16,32 +16,54 @@ st.markdown("Scrape Premier League match data by season and round")
 # Create two columns for inputs
 col1, col2, col3 = st.columns(3)
 
-with col1:
-    season = st.text_input(
-        "Season (Year-Year)", 
-        value="2025-2026",
-        help="Format: YYYY-YYYY (e.g., 2025-2026), or YYYY for MLS"
-    )
-
-with col2:
-    round_num = st.number_input(
-        "Round", 
-        min_value=1, 
-        max_value=38, 
-        value=1,
-        help="Select round number (1-38) for PL, (1-34) for MLS"
-    )
-
+#NEW You can choose the league to scrape. Replaced BASE_URL with league_URL
 with col3:
     league = st.selectbox(
         "League",
-        options=["Premier League", "MLS"],
+        options=["Premier League", "MLS", "USL Championship"],
         help="Select a football league"
     )
 if league == "MLS":
     league_URL = "https://www.fotmob.com/leagues/130/fixtures/mls"
+    #Chooses if season is between years or in a single calender year. 0 means single, 1 means between.
+    league_years = 0
 elif league == "Premier League":
     league_URL = "https://www.fotmob.com/leagues/47/fixtures/premier-league"
+    league_years=1
+
+with col1:
+    if league_years == 0:
+        season = st.text_input(
+            "Season (Year)", 
+            value="2026",
+            help="Format: YYYY (e.g., 2026)"
+        )
+    else: 
+        season = st.text_input(
+            "Season (Year-Year)", 
+            value="2025-2026",
+            help="Format: YYYY-YYYY (e.g., 2025-2026)"
+        )
+
+with col2:
+    if league == "MLS":
+        round_num = st.number_input(
+        "Round", 
+        min_value=1, 
+        max_value=34, 
+        value=1,
+        help="Select round number (1-34)"
+    )
+    elif league == "Premier League":
+        round_num = st.number_input(
+        "Round", 
+        min_value=1, 
+        max_value=38, 
+        value=1,
+        help="Select round number (1-38)"
+    )
+
+
 
 # Initialize session state for matches
 if 'matches' not in st.session_state:

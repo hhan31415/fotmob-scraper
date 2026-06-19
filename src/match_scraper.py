@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import time
 from utils import config
 
-
+#NEW added league_URL to customize and change the league to scrape
 def scrape_matches(driver, season, round_num, league_URL, progress_callback=None):
     """
     Scrapes match data for a specific season and round.
