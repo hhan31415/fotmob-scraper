@@ -92,10 +92,19 @@ def _click_stats_tab(driver, wait):
         (By.XPATH, "//nav//*[normalize-space(text())='Stats']"),
     ]
     """
-    el = wait.until(EC.element_to_be_clickable((By.XPATH, "//nav//*[normalize-space(text())='Stats']")))
-    driver.execute_script("arguments[0].click();", el)
-    time.sleep(3)
-    #print(f"Stats tab clicked with: {selector}")
+    STATS_SELECTORS = [
+        (By.XPATH, "//nav//*[normalize-space(text())='Stats']"),
+    ]
+
+    for by, selector in STATS_SELECTORS:
+        try:
+            el = wait.until(EC.element_to_be_clickable((by, selector)))
+            driver.execute_script("arguments[0].click();", el)
+            time.sleep(3)
+            print(f"Stats tab clicked with: {selector}")
+            return
+        except Exception:
+            continue
 
     raise RuntimeError("Stats tab not found — FotMob may have changed its DOM structure")
 
