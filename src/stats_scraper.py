@@ -79,6 +79,8 @@ def _click_stats_tab(driver, wait):
         driver: WebDriver instance
         wait: WebDriverWait instance
     """
+    """
+    Tried out different ways to click the stats button, the last one worked the best
     STATS_SELECTORS = [
         # Most likely: an anchor tag with exact text "Stats"
         (By.XPATH, "//a[normalize-space(text())='Stats']"),
@@ -89,16 +91,11 @@ def _click_stats_tab(driver, wait):
         # Any element with exact text, scoped to a nav/tab bar
         (By.XPATH, "//nav//*[normalize-space(text())='Stats']"),
     ]
-
-    for by, selector in STATS_SELECTORS:
-        try:
-            el = wait.until(EC.element_to_be_clickable((by, selector)))
-            driver.execute_script("arguments[0].click();", el)
-            time.sleep(3)
-            print(f"Stats tab clicked with: {selector}")
-            return
-        except Exception:
-            continue
+    """
+    el = wait.until(EC.element_to_be_clickable((By.XPATH, "//nav//*[normalize-space(text())='Stats']")))
+    driver.execute_script("arguments[0].click();", el)
+    time.sleep(3)
+    #print(f"Stats tab clicked with: {selector}")
 
     raise RuntimeError("Stats tab not found — FotMob may have changed its DOM structure")
 

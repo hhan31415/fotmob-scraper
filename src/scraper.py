@@ -4,6 +4,7 @@ from utils import driver
 from . import match_scraper
 from . import stats_scraper
 
+#Summary of change from main: added parameter league_URL to allow choosing different leagues
 
 class FotMobScraper:
     """
