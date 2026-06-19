@@ -79,20 +79,28 @@ def _click_stats_tab(driver, wait):
         driver: WebDriver instance
         wait: WebDriverWait instance
     """
-    try:
-        #stats_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Stats')]")))
-        stats_tab = wait.until(EC.element_to_be_clickable((By.XPATH, " //a[normalize-space(text())='Stats']")))
-        stats_tab.click()
-        time.sleep(3)
-    except Exception as e:
-        print(f"Could not click Stats tab: {e}")
+    STATS_SELECTORS = [
+        # Most likely: an anchor tag with exact text "Stats"
+        (By.XPATH, "//a[normalize-space(text())='Stats']"),
+        # Tab role (ARIA)
+        (By.XPATH, "//*[@role='tab' and normalize-space(text())='Stats']"),
+        # List item containing "Stats"
+        (By.XPATH, "//li[normalize-space(text())='Stats']"),
+        # Any element with exact text, scoped to a nav/tab bar
+        (By.XPATH, "//nav//*[normalize-space(text())='Stats']"),
+    ]
+
+    for by, selector in STATS_SELECTORS:
         try:
-            stats_tab = driver.find_element(By.XPATH, "//*[text()='Stats']")
-            stats_tab.click()
+            el = wait.until(EC.element_to_be_clickable((by, selector)))
+            driver.execute_script("arguments[0].click();", el)
             time.sleep(3)
-        except:
-            print("Stats tab not found")
-            raise
+            print(f"Stats tab clicked with: {selector}")
+            return
+        except Exception:
+            continue
+
+    raise RuntimeError("Stats tab not found — FotMob may have changed its DOM structure")
 
 
 def _extract_possession(driver, stats_data):
