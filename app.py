@@ -29,7 +29,7 @@ with col2:
         min_value=1, 
         max_value=38, 
         value=1,
-        help="Select round number (1-38)"
+        help="Select round number (1-38) for PL, (1-34) for MLS"
     )
 
 with col3:
@@ -39,9 +39,9 @@ with col3:
         help="Select a football league"
     )
 if league == "MLS":
-    BASE_URL = "https://www.fotmob.com/leagues/130/fixtures/mls"
+    league_URL = "https://www.fotmob.com/leagues/130/fixtures/mls"
 elif league == "Premier League":
-    BASE_URL = "https://www.fotmob.com/leagues/47/fixtures/premier-league"
+    league_URL = "https://www.fotmob.com/leagues/47/fixtures/premier-league"
 
 # Initialize session state for matches
 if 'matches' not in st.session_state:
@@ -71,7 +71,7 @@ if scrape_matches_btn:
         with st.spinner("Starting scraper..."):
             matches = run_scraper_with_progress(
                 st.session_state.scraper.get_matches,
-                season, round_num,
+                season, round_num, league_URL,
                 progress_divisor=100
             )
             

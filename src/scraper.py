@@ -21,7 +21,7 @@ class FotMobScraper:
         """Ensure the driver is alive, recreating if necessary."""
         self.driver = driver.ensure_driver_alive(self.driver)
     
-    def get_matches(self, season, round_num, progress_callback=None):
+    def get_matches(self, season, round_num, league_URL, progress_callback=None):
         """
         Scrape match data for a specific season and round.
         
@@ -43,7 +43,7 @@ class FotMobScraper:
         return match_scraper.scrape_matches(
             self.driver, 
             season, 
-            round_num, 
+            round_num, league_URL, 
             progress_callback
         )
     
