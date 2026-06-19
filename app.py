@@ -14,13 +14,13 @@ st.title("⚽ FotMob Football Scraper")
 st.markdown("Scrape Premier League match data by season and round")
 
 # Create two columns for inputs
-col1, col2, col3 = st.columns(3)
+col3, col1, col2 = st.columns(3)
 
 #NEW You can choose the league to scrape. Replaced BASE_URL with league_URL
 with col3:
     league = st.selectbox(
         "League",
-        options=["Premier League", "MLS", "USL Championship"],
+        options=["Premier League", "MLS"],
         help="Select a football league"
     )
 if league == "MLS":
@@ -29,7 +29,7 @@ if league == "MLS":
     league_years = 0
 elif league == "Premier League":
     league_URL = "https://www.fotmob.com/leagues/47/fixtures/premier-league"
-    league_years=1
+    league_years= 1
 
 with col1:
     if league_years == 0:
@@ -110,7 +110,7 @@ if scrape_stats_btn:
         with st.spinner("Starting scraper (this may take a while)..."):
             matches_with_stats = run_scraper_with_progress(
                 st.session_state.scraper.get_matches_with_stats,
-                season, round_num,
+                season, round_num, league_URL,
                 progress_divisor=100
             )
             
@@ -127,7 +127,7 @@ if scrape_season_btn:
         with st.spinner("Starting season scraper (this will take a LONG time)..."):
             season_stats = run_scraper_with_progress(
                 st.session_state.scraper.get_season_stats,
-                season,
+                season, league_URL, 
                 progress_divisor=100
             )
             

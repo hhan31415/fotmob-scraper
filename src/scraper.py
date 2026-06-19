@@ -73,7 +73,7 @@ class FotMobScraper:
             progress_callback
         )
 
-    def get_matches_with_stats(self, season, round_num, progress_callback=None):
+    def get_matches_with_stats(self, season, round_num, league_URL, progress_callback=None):
         """
         Scrape matches and their stats for a specific season and round.
         
@@ -91,7 +91,7 @@ class FotMobScraper:
         if progress_callback:
             progress_callback(0, "Fetching match list...")
             
-        matches = self.get_matches(season, round_num)
+        matches = self.get_matches(season, round_num, league_URL)
         
         if not matches:
             return []
@@ -132,7 +132,7 @@ class FotMobScraper:
             
         return results
 
-    def get_season_stats(self, season, progress_callback=None):
+    def get_season_stats(self, season, league_URL, progress_callback=None):
         """
         Scrape match data and stats for an entire season (Rounds 1-38).
         
@@ -160,7 +160,7 @@ class FotMobScraper:
                     progress_callback(overall_percent, f"[Round {round_num}/{total_rounds}] {text}")
 
             try:
-                round_results = self.get_matches_with_stats(season, round_num, progress_callback=round_progress)
+                round_results = self.get_matches_with_stats(season, round_num, league_URL, progress_callback=round_progress)
                 all_results.extend(round_results)
             except Exception as e:
                 print(f"Error scraping Round {round_num}: {e}")
