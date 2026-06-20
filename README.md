@@ -9,10 +9,10 @@ A powerful Python-based web scraper for extracting detailed football league, pla
     -   Includes: Possession, xG, Shots, Passes, Defense, Duels, and more.
 -   **Scrape Matches & Stats (Season)**: Scrape data for an entire season (Rounds 1-38).
     -   *Note: This process takes time as it scrapes ~380 matches.*
--   **Scrape all players in league and season**: Scrape all player data for a specific league and season (Rounds 1-38).
 -   **Pagination**: Easily navigate through large datasets with a paginated table view.
 -   **CSV Export**: Download the full scraped dataset (matches + detailed stats) as a CSV file.
 -   **Interactive UI**: Built with Streamlit for a smooth and responsive user experience.
+-   **UPDATES: Scrape all players in league and season**: Scrape all player data for a specific league and season.
 
 ## 🛠️ Prerequisites
 
