@@ -39,3 +39,14 @@ Thumbs.db
 
 # Project specific
 .gemini/
+
+# Scraper output data (generated CSVs, large and shouldn't be in git history)
+player_data_*/
+test_output_league_players/
+test_combined_fix/
+test_csv_export/
+test_teams_csv/
+*.csv
+
+# ChromeDriver (auto-downloaded by webdriver_manager, machine-specific binary)
+.wdm/
