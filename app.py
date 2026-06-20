@@ -25,11 +25,12 @@ with col3:
     )
 if league == "MLS":
     league_URL = "https://www.fotmob.com/leagues/130/fixtures/mls"
-    #Chooses if season is between years or in a single calender year. 0 means single, 1 means between.
     league_years = 0
+    league_table_url = "https://www.fotmob.com/leagues/130/table/mls"
 elif league == "Premier League":
     league_URL = "https://www.fotmob.com/leagues/47/fixtures/premier-league"
-    league_years= 1
+    league_years = 1
+    league_table_url = "https://www.fotmob.com/leagues/47/table/premier-league"
 
 with col1:
     if league_years == 0:
@@ -215,6 +216,88 @@ if st.session_state.matches:
                         
                 except Exception as e:
                     st.error(f"An error occurred while fetching stats: {e}")
+
+st.markdown("---")
+st.subheader("👥 Scrape Full League Player Data")
+st.markdown(
+    "Scrapes every player on every team in the selected league: profile info, "
+    "market value, and full season stats (xG, xGOT, passing, defending, etc.). "
+    "This is a separate, longer-running scrape (one page load per player -- "
+    "expect 45-90+ minutes for a full league)."
+)
+
+if 'player_data_summary' not in st.session_state:
+    st.session_state.player_data_summary = None
+
+confirm_long_scrape = st.checkbox(
+    f"I understand this will scrape ~25-30 teams in {league} and may take 45-90+ minutes"
+)
+
+scrape_players_btn = st.button(
+    "🏃 Scrape All Players in League",
+    type="primary",
+    width='stretch',
+    disabled=not confirm_long_scrape,
+    help="Check the box above to enable. This will take a long time!"
+)
+
+if scrape_players_btn:
+    try:
+        output_dir = f"player_data_{league.replace(' ', '_').lower()}"
+        with st.spinner(f"Scraping all players in {league}... this will take a while."):
+            summary = run_scraper_with_progress(
+                st.session_state.scraper.get_league_player_data,
+                league_table_url, output_dir,
+                progress_divisor=100
+            )
+
+            if summary and summary.get("total_players", 0) > 0:
+                st.session_state.player_data_summary = summary
+                st.success(
+                    f"Successfully scraped {summary['total_players']} players "
+                    f"across {summary['teams_scraped'] + summary['teams_skipped_resume']} teams!"
+                )
+                if summary.get("teams_failed", 0) > 0:
+                    st.warning(f"{summary['teams_failed']} team(s) failed to scrape and were skipped.")
+            else:
+                st.warning("No player data found. Please check the league table URL is correct.")
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
+
+if st.session_state.player_data_summary:
+    summary = st.session_state.player_data_summary
+    combined_csv_path = summary.get("combined_csv_path")
+
+    if combined_csv_path and os.path.isfile(combined_csv_path):
+        player_df = pd.read_csv(combined_csv_path)
+
+        st.markdown(f"**{len(player_df)} players** across **{summary['league_name']} {summary['season']}**")
+
+        st.dataframe(
+            player_df,
+            width='stretch',
+            hide_index=True,
+            height=750
+        )
+
+        with open(combined_csv_path, "rb") as f:
+            csv_bytes = f.read()
+
+        st.download_button(
+            label="📥 Download All Player Data (CSV)",
+            data=csv_bytes,
+            file_name=os.path.basename(combined_csv_path),
+            mime="text/csv",
+            type="primary",
+            width='stretch'
+        )
+
+        with st.expander("📁 Per-team CSV files"):
+            st.markdown(f"Individual team CSVs were also saved to `{os.path.dirname(combined_csv_path)}/`:")
+            for team_name, path in summary.get("team_csv_paths", {}).items():
+                st.markdown(f"- **{team_name}**: `{path}`")
+    else:
+        st.warning("Combined CSV file not found on disk.")
 
 # Instructions
 with st.expander("ℹ️ How to use"):
