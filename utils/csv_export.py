@@ -8,6 +8,13 @@ if its CSV already exists on disk.
 import csv
 import os
 import re
+import pandas as pd
+from . import cleanup_player_csv as _cleanup
+rename_ambiguous_columns = _cleanup.rename_ambiguous_columns
+backfill_nan_zero_gap = _cleanup.backfill_nan_zero_gap
+fix_money = _cleanup.fix_money
+round_floats = _cleanup.round_floats
+reorder_columns = _cleanup.reorder_columns
 
 
 def safe_filename(name):
@@ -74,14 +81,14 @@ def write_team_csv(output_dir, team_name, flat_player_rows):
         # to retry rather than treat as "done")
         return path
 
-    fieldnames = _union_fieldnames(flat_player_rows)
+    df = pd.DataFrame(flat_player_rows)
+    df = rename_ambiguous_columns(df)
+    df = backfill_nan_zero_gap(df)
+    df = fix_money(df)
+    df = round_floats(df, decimals=2)
+    df = reorder_columns(df)
 
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in flat_player_rows:
-            writer.writerow(row)
-
+    df.to_csv(path, index=False)
     return path
 
 
@@ -104,14 +111,14 @@ def write_combined_csv(output_dir, combined_filename, all_flat_player_rows):
     if not all_flat_player_rows:
         return path
 
-    fieldnames = _union_fieldnames(all_flat_player_rows)
+    df = pd.DataFrame(all_flat_player_rows)
+    df = rename_ambiguous_columns(df)
+    df = backfill_nan_zero_gap(df)
+    df = fix_money(df)
+    df = round_floats(df, decimals=2)
+    df = reorder_columns(df)
 
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in all_flat_player_rows:
-            writer.writerow(row)
-
+    df.to_csv(path, index=False)
     return path
 
 
