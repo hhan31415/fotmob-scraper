@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 import time
 from utils import config
 
-
-def scrape_matches(driver, season, round_num, progress_callback=None):
+#NEW added league_URL to customize and change the league to scrape
+def scrape_matches(driver, season, round_num, league_URL, progress_callback=None):
     """
     Scrapes match data for a specific season and round.
     
@@ -22,9 +22,9 @@ def scrape_matches(driver, season, round_num, progress_callback=None):
     """
     if progress_callback:
         progress_callback(10, "Initializing scraper...")
-
+    
     url_round = int(round_num) - 1
-    url = f"{config.BASE_URL}?group=by-round&season={season}&round={url_round}"
+    url = f"{league_URL}?group=by-round&season={season}&round={url_round}"
     print(f"Navigating to: {url}")
     driver.get(url)
 

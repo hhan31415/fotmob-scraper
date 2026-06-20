@@ -3,7 +3,9 @@
 from utils import driver
 from . import match_scraper
 from . import stats_scraper
+from . import league_player_data
 
+#Summary of change from main: added parameter league_URL to allow choosing different leagues
 
 class FotMobScraper:
     """
@@ -21,7 +23,8 @@ class FotMobScraper:
         """Ensure the driver is alive, recreating if necessary."""
         self.driver = driver.ensure_driver_alive(self.driver)
     
-    def get_matches(self, season, round_num, progress_callback=None):
+    #NEW Added league_URL to use for match_scraper.scape_matches()
+    def get_matches(self, season, round_num, league_URL, progress_callback=None):
         """
         Scrape match data for a specific season and round.
         
@@ -43,7 +46,7 @@ class FotMobScraper:
         return match_scraper.scrape_matches(
             self.driver, 
             season, 
-            round_num, 
+            round_num, league_URL, 
             progress_callback
         )
     
@@ -72,7 +75,7 @@ class FotMobScraper:
             progress_callback
         )
 
-    def get_matches_with_stats(self, season, round_num, progress_callback=None):
+    def get_matches_with_stats(self, season, round_num, league_URL, progress_callback=None):
         """
         Scrape matches and their stats for a specific season and round.
         
@@ -90,7 +93,7 @@ class FotMobScraper:
         if progress_callback:
             progress_callback(0, "Fetching match list...")
             
-        matches = self.get_matches(season, round_num)
+        matches = self.get_matches(season, round_num, league_URL)
         
         if not matches:
             return []
@@ -131,7 +134,7 @@ class FotMobScraper:
             
         return results
 
-    def get_season_stats(self, season, progress_callback=None):
+    def get_season_stats(self, season, league_URL, progress_callback=None):
         """
         Scrape match data and stats for an entire season (Rounds 1-38).
         
@@ -159,7 +162,7 @@ class FotMobScraper:
                     progress_callback(overall_percent, f"[Round {round_num}/{total_rounds}] {text}")
 
             try:
-                round_results = self.get_matches_with_stats(season, round_num, progress_callback=round_progress)
+                round_results = self.get_matches_with_stats(season, round_num, league_URL, progress_callback=round_progress)
                 all_results.extend(round_results)
             except Exception as e:
                 print(f"Error scraping Round {round_num}: {e}")
@@ -171,6 +174,42 @@ class FotMobScraper:
             
         return all_results
     
+    def get_league_player_data(self, league_table_url, output_dir, progress_callback=None):
+        """
+        Scrapes full player data (profile + season stats) for every player
+        on every team in a league, given the league's table page URL.
+
+        This is a separate pipeline from get_matches/get_season_stats: it
+        answers "who plays where and how good are they" rather than "what
+        happened in matches". Writes one CSV per team plus a combined
+        league-wide CSV, all incrementally so progress survives a crash.
+
+        Resume: if interrupted, re-running with the same output_dir will
+        skip any team whose CSV already exists and pick up where it left
+        off. To force a full re-scrape, delete output_dir (or just the
+        specific team CSVs you want redone).
+
+        Args:
+            league_table_url (str): FotMob league table URL, e.g.
+                "https://www.fotmob.com/leagues/130/table/mls"
+            output_dir (str): Directory to write per-team and combined CSVs into
+            progress_callback (callable, optional): Callback for progress updates
+
+        Returns:
+            dict: Summary with keys league_name, season, teams_scraped,
+                teams_skipped_resume, teams_failed, total_players,
+                combined_csv_path, team_csv_paths. See
+                league_player_data.scrape_league_player_data() for full detail.
+        """
+        self.setup_driver()
+        return league_player_data.scrape_league_player_data(
+            self.driver,
+            league_table_url,
+            output_dir,
+            progress_callback
+        )
+
+
     def close(self):
         """Close the WebDriver instance."""
         driver.close_driver(self.driver)
