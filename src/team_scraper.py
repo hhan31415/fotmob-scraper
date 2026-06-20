@@ -21,6 +21,7 @@ squad URL itself (e.g. /teams/960720/squad/inter-miami-cf -> 960720).
 """
 
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import TimeoutException, WebDriverException
 import json
 import re
 
@@ -65,6 +66,12 @@ def scrape_squad(driver, squad_url, progress_callback=None):
         print(f"Navigating to squad URL: {squad_url}")
         driver.get(squad_url)
 
+    except (TimeoutException, WebDriverException):
+        # Driver-level failure -- propagate so the caller can detect and
+        # recover the driver, rather than swallowing it like a parse error.
+        raise
+
+    try:
         next_data = _extract_next_data(driver)
         if not next_data:
             print(f"Could not extract __NEXT_DATA__ for {squad_url}")
@@ -84,7 +91,7 @@ def scrape_squad(driver, squad_url, progress_callback=None):
         return result
 
     except Exception as e:
-        print(f"Error scraping squad {squad_url}: {e}")
+        print(f"Error parsing squad data for {squad_url}: {e}")
         import traceback
         traceback.print_exc()
         return {}

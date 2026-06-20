@@ -14,6 +14,7 @@ from . import league_scraper
 from . import team_scraper
 from . import player_scraper
 from utils import csv_export
+from utils import driver as driver_utils
 
 
 def scrape_league_player_data(driver, league_table_url, output_dir, progress_callback=None):
@@ -26,6 +27,12 @@ def scrape_league_player_data(driver, league_table_url, output_dir, progress_cal
     skipped entirely (its rows are still loaded from disk and included in
     the final combined CSV). To force a full re-scrape, delete output_dir
     or the specific team CSVs you want redone.
+
+    Driver health: a long scrape (hundreds of page loads) will occasionally
+    hit a hung or crashed Chrome renderer. After any failed player scrape,
+    this calls driver_utils.ensure_driver_alive() to detect and transparently
+    recreate a broken driver before moving on, rather than letting every
+    subsequent player burn the full page-load timeout against a dead driver.
 
     Args:
         driver: WebDriver instance (already initialized)
@@ -54,6 +61,7 @@ def scrape_league_player_data(driver, league_table_url, output_dir, progress_cal
         "teams_failed": 0,
         "total_players": 0,
         "combined_csv_path": None,
+        "teams_csv_path": None,
         "team_csv_paths": {},
     }
 
@@ -71,6 +79,20 @@ def scrape_league_player_data(driver, league_table_url, output_dir, progress_cal
     teams = league_data["teams"]
     total_teams = len(teams)
     all_flat_rows = []
+
+    # Write a small teams.csv reference table: team_id -> team_name, group,
+    # table position, etc. This is the authoritative team_id/name mapping,
+    # sourced directly from the league table page. It exists because the
+    # player rows' own 'team' column reflects each player's FotMob
+    # "primary club" (from their individual profile page), which can
+    # legitimately differ from the squad they were actually scraped under
+    # for dual-registered or reserve-squad players (e.g. a player rostered
+    # on a first team's squad page whose profile lists a reserve/academy
+    # side as primary club). team_id is always correct and consistent;
+    # 'team' in the player CSVs is not reliable for grouping/joins -- use
+    # this file instead.
+    teams_csv_path = csv_export.write_teams_csv(output_dir, teams)
+    summary["teams_csv_path"] = teams_csv_path
 
     for i, team in enumerate(teams):
         team_name = team["team_name"]
@@ -93,6 +115,7 @@ def scrape_league_player_data(driver, league_table_url, output_dir, progress_cal
             squad_data = team_scraper.scrape_squad(driver, squad_url)
         except Exception as e:
             print(f"Failed to scrape squad for {team_name}: {e}")
+            driver = driver_utils.ensure_driver_alive(driver)
             summary["teams_failed"] += 1
             continue
 
@@ -113,6 +136,12 @@ def scrape_league_player_data(driver, league_table_url, output_dir, progress_cal
                 player_data = player_scraper.scrape_player(driver, squad_player["player_url"])
             except Exception as e:
                 print(f"Failed to scrape player {squad_player.get('name')}: {e}")
+                # A failed scrape can mean the page itself was bad (fine,
+                # just skip it) or that the driver/Chrome renderer has
+                # hung/crashed (not fine -- every subsequent player would
+                # also fail). Cheaply verify driver health here and
+                # transparently recreate it if needed before continuing.
+                driver = driver_utils.ensure_driver_alive(driver)
                 continue
 
             if not player_data or not player_data.get("name"):

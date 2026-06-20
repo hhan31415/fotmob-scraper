@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import os
 from src import FotMobScraper
 from utils.app_helpers import (
     run_scraper_with_progress,
@@ -10,13 +11,13 @@ from utils.app_helpers import (
 
 st.set_page_config(page_title="FotMob Scraper", page_icon="⚽", layout="wide")
 
-st.title("⚽ FotMob Football Scraper")
-st.markdown("Scrape Premier League match data by season and round")
+st.title("FotMob Football Scraper")
+st.subheader("Scrape match data by league, season, and round")
 
 # Create two columns for inputs
 col3, col1, col2 = st.columns(3)
 
-#NEW You can choose the league to scrape. Replaced BASE_URL with league_URL
+#NEW You can choose the league to scrape. Replaced BASE_URL with league_URL. league_table_url used for league player data
 with col3:
     league = st.selectbox(
         "League",
@@ -216,13 +217,11 @@ if st.session_state.matches:
                         
                 except Exception as e:
                     st.error(f"An error occurred while fetching stats: {e}")
-
-st.markdown("---")
-st.subheader("👥 Scrape Full League Player Data")
+st.subheader("Scrape League Player Data")
 st.markdown(
-    "Scrapes every player on every team in the selected league: profile info, "
+    "Scrapes every player on every team in the selected league and season: profile info, "
     "market value, and full season stats (xG, xGOT, passing, defending, etc.). "
-    "This is a separate, longer-running scrape (one page load per player -- "
+    "This is a separate scrape (one page load per player -- "
     "expect 45-90+ minutes for a full league)."
 )
 
@@ -230,11 +229,11 @@ if 'player_data_summary' not in st.session_state:
     st.session_state.player_data_summary = None
 
 confirm_long_scrape = st.checkbox(
-    f"I understand this will scrape ~25-30 teams in {league} and may take 45-90+ minutes"
+    f"I understand this will scrape ~25-35 teams in {league} and may take 45-90+ minutes"
 )
 
 scrape_players_btn = st.button(
-    "🏃 Scrape All Players in League",
+    "🏃 Scrape all players in league and season",
     type="primary",
     width='stretch',
     disabled=not confirm_long_scrape,
@@ -303,17 +302,22 @@ if st.session_state.player_data_summary:
 with st.expander("ℹ️ How to use"):
     st.markdown("""
     **Scraping Matches:**
-    1. Enter the season in the format `YYYY-YYYY` (e.g., `2025-2026`)
-    2. Select the round number (1-38)
-    3. Click the **Scrape Matches** button
-    4. Wait for the results to appear below
-    
-    **Viewing Match Stats:**
-    1. After scraping matches, select a match from the dropdown
-    2. Click the **Get Match Stats** button
-    3. View detailed statistics including xG, Shots, Passes, etc.
+    1. Choose the league you want
+    2. Enter the season in the format `YYYY` or `YYYY-YYYY`
+    3. Select the round number
+    4. Click one of the three **Scrape Matches** button
+    5. Wait for the results to appear below
     
     **Note:** 
     - The scraper uses Selenium with headless Chrome, so it may take a few seconds to load.
     - Detailed stats are only available for finished matches (FT status).
+                
+    **Scraping Players:**
+    1. Choose the league you want
+    2. Enter the season in the format `YYYY` or `YYYY-YYYY`
+    4. Click the **Scrape All Players in League** button
+    5. Wait for the results to appear below
+    
+    **Note:**
+    - CSVs will be stored in files for individual clubs and the entire dataset. To redo a scrape with the same league, you must delete the corresponding files for a league.
     """)

@@ -100,6 +100,16 @@ def fix_money(df):
 
     df = df.copy()
 
+    # Coerce to numeric before any arithmetic. Necessary because resumed
+    # rows (read back from a prior run's CSV via csv.DictReader) come in
+    # as plain strings, while freshly-scraped rows in the same combined
+    # batch keep native int/float types. Mixing the two makes pandas infer
+    # an object/string dtype for the whole column, and multiplying that by
+    # a float fails with "can only string multiply by an integer" since
+    # pandas falls back to Python's str-repeat operator instead of
+    # elementwise numeric multiplication.
+    df["market_value_eur"] = pd.to_numeric(df["market_value_eur"], errors="coerce")
+
     def format_usd(eur_value):
         if pd.isna(eur_value):
             return None
@@ -128,9 +138,94 @@ def backfill_nan_zero_gap(df):
 
 def rename_ambiguous_columns(df):
     """Rename Summary/Top stats columns to reflect their actual scope
-    (all competitions vs selected competition only)."""
+    (all competitions vs selected competition only).
+
+    Idempotent: safe to call on a dataframe that's a MIX of freshly-scraped
+    rows (still using the raw 'Summary - X' / 'Top stats - X' names) and
+    rows read back from already-cleaned CSVs during a resumed run (which
+    already have the final 'All Competitions - X' / 'Selected Competition - X'
+    names). Without this, renaming a mixed dataframe produces two columns
+    with the identical final name side by side, which breaks any later
+    df[col] = df[col].fillna(df[other_col]) call with a
+    "value parameter must be a scalar, dict or Series" TypeError, since
+    indexing a duplicate-named column returns a DataFrame instead of a
+    Series.
+    """
     existing_renames = {k: v for k, v in RENAME_MAP.items() if k in df.columns}
-    return df.rename(columns=existing_renames)
+    df = df.rename(columns=existing_renames)
+
+    # If renaming produced any duplicate column names (because the target
+    # name already existed from a previously-cleaned/resumed row), merge
+    # them: take the first non-null value across the duplicate columns for
+    # each row, then drop down to a single column with that name.
+    if df.columns.duplicated().any():
+        merged = {}
+        for col_name in df.columns[df.columns.duplicated(keep=False)].unique():
+            same_named = df.loc[:, df.columns == col_name]
+            merged[col_name] = same_named.bfill(axis=1).iloc[:, 0]
+
+        df = df.loc[:, ~df.columns.duplicated(keep="first")]
+        for col_name, series in merged.items():
+            df[col_name] = series
+
+    return df
+
+
+def coerce_numeric_columns(df, exclude=None):
+    """
+    Coerces any column that looks numeric (i.e. converts cleanly via
+    pd.to_numeric for non-null values) from object/string dtype to a real
+    numeric dtype.
+
+    This exists because of a resume-related dtype mixing issue: rows from
+    a fresh scrape keep native Python int/float types, while rows read
+    back from a prior run's CSV (via csv.DictReader, in
+    read_team_csv_as_rows) come back as plain strings for every field.
+    When combined into one dataframe, any numeric column can silently end
+    up as object dtype instead of int64/float64. That's not just a
+    cosmetic issue -- it breaks arithmetic (e.g. "can only string multiply
+    by an integer" in fix_money) and breaks dtype-based column selection
+    (e.g. round_floats' select_dtypes(include=["float64"]) silently skips
+    contaminated columns instead of rounding them, since they technically
+    aren't float64 anymore).
+
+    Rather than patching each downstream function one at a time as new
+    instances of this surface, this runs once, early, on the full combined
+    dataframe and fixes the dtype at the source.
+
+    Args:
+        df (pd.DataFrame)
+        exclude (set[str], optional): Column names to never coerce (e.g.
+            identity/text fields that might coincidentally look numeric
+            for some rows, like a country code or zero-padded ID -- none
+            currently apply here, but kept as a safety valve)
+
+    Returns:
+        pd.DataFrame
+    """
+    exclude = exclude or set()
+    df = df.copy()
+
+    for col in df.columns:
+        if col in exclude:
+            continue
+        if df[col].dtype != object:
+            continue  # already numeric, bool, etc -- nothing to do
+
+        coerced = pd.to_numeric(df[col], errors="coerce")
+
+        # Only adopt the coerced version if it didn't turn genuinely
+        # non-numeric data (names, position strings, URLs, etc.) into
+        # all-NaN. A column where every non-null original value converts
+        # successfully is numeric; a column where conversion mostly fails
+        # is genuinely text and should be left alone.
+        original_non_null = df[col].notna().sum()
+        coerced_non_null = coerced.notna().sum()
+
+        if original_non_null > 0 and coerced_non_null == original_non_null:
+            df[col] = coerced
+
+    return df
 
 
 def round_floats(df, decimals=2):
@@ -155,6 +250,13 @@ def clean_player_csv(input_path, output_path):
     original_shape = df.shape
 
     df = rename_ambiguous_columns(df)
+    df = coerce_numeric_columns(df, exclude={"name", "team", "url", "position",
+                                               "position_short", "position_group",
+                                               "preferred_foot", "country",
+                                               "contract_end", "market_value",
+                                               "market_value_usd", "season_league",
+                                               "season_year", "league_name",
+                                               "league_group"})
     df = backfill_nan_zero_gap(df)
     df = fix_money(df)
     df = round_floats(df, decimals=2)

@@ -28,6 +28,7 @@ Schema confirmed via verify_fotmob_json.py against a live player page
 """
 
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import TimeoutException, WebDriverException
 import json
 import re
 
@@ -54,7 +55,16 @@ def scrape_player(driver, player_url, progress_callback=None):
             - detailed_stats_per90: same shape as detailed_stats but per-90 values
             - raw: full parsed player data object, kept so nothing is lost if a
               field is missed above
-        Returns {} if the page could not be parsed.
+        Returns {} if the page loaded but data could not be parsed (e.g. a
+        genuinely low-activity player missing whole stat sections in the JSON).
+
+    Raises:
+        TimeoutException, WebDriverException: if the page itself failed to
+        load (driver hung/crashed/timed out). These are NOT swallowed here,
+        unlike parsing errors, because the caller (league_player_data.py)
+        needs to see them to trigger driver-health recovery -- otherwise a
+        hung driver silently fails every subsequent player with no recovery,
+        since this function would just return {} for every case alike.
     """
     try:
         if progress_callback:
@@ -63,6 +73,13 @@ def scrape_player(driver, player_url, progress_callback=None):
         print(f"Navigating to player URL: {player_url}")
         driver.get(player_url)
 
+    except (TimeoutException, WebDriverException):
+        # Driver-level failure (hung renderer, crashed tab, etc.) -- let
+        # this propagate so the caller can detect and recover the driver,
+        # rather than swallowing it the same way as a data-parsing issue.
+        raise
+
+    try:
         next_data = _extract_next_data(driver)
         if not next_data:
             print(f"Could not extract __NEXT_DATA__ for {player_url}")
@@ -81,7 +98,11 @@ def scrape_player(driver, player_url, progress_callback=None):
         return result
 
     except Exception as e:
-        print(f"Error scraping player {player_url}: {e}")
+        # Data-parsing errors (e.g. mainLeague is None for a near-zero-
+        # minutes player) are genuinely benign -- the page loaded fine,
+        # the driver is healthy, this specific player just has incomplete
+        # data on FotMob's end. Swallow and return {} as before.
+        print(f"Error parsing player data for {player_url}: {e}")
         import traceback
         traceback.print_exc()
         return {}

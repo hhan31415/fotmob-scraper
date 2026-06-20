@@ -11,10 +11,17 @@ import re
 import pandas as pd
 from . import cleanup_player_csv as _cleanup
 rename_ambiguous_columns = _cleanup.rename_ambiguous_columns
+coerce_numeric_columns = _cleanup.coerce_numeric_columns
 backfill_nan_zero_gap = _cleanup.backfill_nan_zero_gap
 fix_money = _cleanup.fix_money
 round_floats = _cleanup.round_floats
 reorder_columns = _cleanup.reorder_columns
+
+_IDENTITY_TEXT_COLS = {"name", "team", "url", "position", "position_short",
+                        "position_group", "preferred_foot", "country",
+                        "contract_end", "market_value", "market_value_usd",
+                        "season_league", "season_year", "league_name",
+                        "league_group"}
 
 
 def safe_filename(name):
@@ -83,6 +90,7 @@ def write_team_csv(output_dir, team_name, flat_player_rows):
 
     df = pd.DataFrame(flat_player_rows)
     df = rename_ambiguous_columns(df)
+    df = coerce_numeric_columns(df, exclude=_IDENTITY_TEXT_COLS)
     df = backfill_nan_zero_gap(df)
     df = fix_money(df)
     df = round_floats(df, decimals=2)
@@ -113,12 +121,52 @@ def write_combined_csv(output_dir, combined_filename, all_flat_player_rows):
 
     df = pd.DataFrame(all_flat_player_rows)
     df = rename_ambiguous_columns(df)
+    df = coerce_numeric_columns(df, exclude=_IDENTITY_TEXT_COLS)
     df = backfill_nan_zero_gap(df)
     df = fix_money(df)
     df = round_floats(df, decimals=2)
     df = reorder_columns(df)
 
     df.to_csv(path, index=False)
+    return path
+
+
+def write_teams_csv(output_dir, teams):
+    """
+    Writes a small teams.csv reference table: one row per team with its
+    team_id, name, and league table info.
+
+    This is the authoritative team_id <-> team_name mapping, sourced
+    directly from the league table page (league_scraper.scrape_league_teams).
+    It exists because the 'team' column in player CSVs reflects each
+    player's FotMob "primary club" from their own profile page, which can
+    differ from the squad they were actually scraped under (e.g. a
+    dual-registered reserve player). team_id is always reliable for
+    grouping/joins; this file lets you resolve it to a readable name.
+
+    Args:
+        output_dir (str): Directory to write into
+        teams (list[dict]): The "teams" list from
+            league_scraper.scrape_league_teams()'s return value
+
+    Returns:
+        str: Path to the written CSV
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    path = os.path.join(output_dir, "teams.csv")
+
+    if not teams:
+        return path
+
+    fieldnames = ["team_id", "team_name", "short_name", "group",
+                  "played", "wins", "draws", "losses", "points", "position"]
+
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for team in teams:
+            writer.writerow({k: team.get(k) for k in fieldnames})
+
     return path
 
 
