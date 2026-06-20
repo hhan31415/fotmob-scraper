@@ -26,6 +26,7 @@ from utils import driver as driver_utils
 
 PLAYER_URL = "https://www.fotmob.com/players/1233655/alex-scott"
 SQUAD_URL = "https://www.fotmob.com/teams/960720/squad/inter-miami-cf"
+LEAGUE_TABLE_URL = "https://www.fotmob.com/leagues/130/table/mls"
 
 
 def extract_next_data(driver):
@@ -173,11 +174,64 @@ def verify_squad_page(driver):
                 print(f"  Not a dict: {preview(team_obj, 500)}")
 
 
+def verify_league_table_page(driver):
+    print(f"\n\n##### VERIFYING LEAGUE TABLE PAGE: {LEAGUE_TABLE_URL} #####")
+    driver.get(LEAGUE_TABLE_URL)
+
+    next_data = extract_next_data(driver)
+    if not next_data:
+        print("FAILED: could not extract __NEXT_DATA__ from league table page.")
+        return
+
+    print("SUCCESS: __NEXT_DATA__ found and parsed.")
+
+    page_props = next_data.get("props", {}).get("pageProps", {})
+    print(f"\npageProps top-level keys: {list(page_props.keys())}")
+
+    dump_keys(page_props, "LEAGUE TABLE PAGE pageProps OBJECT")
+
+    # Hunt for the table data specifically
+    print(f"\n{'='*70}\nSEARCHING FOR TABLE DATA\n{'='*70}")
+    candidates = ["table", "data", "tableData", "details"]
+    for c in candidates:
+        if c in page_props:
+            print(f"\n--- Found candidate key: '{c}' ---")
+            print(preview(page_props[c], 1500))
+        else:
+            print(f"\n--- '{c}' not present in pageProps ---")
+
+    # Deep dive into table structure: this is where conference splits (e.g.
+    # MLS Eastern/Western) would show up as multiple table groups
+    print(f"\n{'='*70}\nDEEP DIVE: table structure (checking for conference splits)\n{'='*70}")
+    table_data = page_props.get("table")
+    if table_data:
+        print(f"table type: {type(table_data).__name__}")
+        if isinstance(table_data, list):
+            print(f"table is a LIST with {len(table_data)} entries (likely one per conference/group)")
+            for i, entry in enumerate(table_data):
+                print(f"\n  --- table[{i}] ---")
+                if isinstance(entry, dict):
+                    print(f"  keys: {list(entry.keys())}")
+                    print(f"  preview: {preview(entry, 2000)}")
+        elif isinstance(table_data, dict):
+            print(f"table keys: {list(table_data.keys())}")
+            print(f"preview: {preview(table_data, 2000)}")
+    else:
+        print("No 'table' key found directly in pageProps; checking fallback...")
+        fallback = page_props.get("fallback", {})
+        print(f"fallback keys: {list(fallback.keys())}")
+        for key in fallback.keys():
+            print(f"\n--- fallback['{key}'] preview ---")
+            print(preview(fallback[key], 800))
+
+
+
 def main():
     drv = driver_utils.setup_driver()
     try:
         verify_player_page(drv)
         verify_squad_page(drv)
+        verify_league_table_page(drv)
     finally:
         driver_utils.close_driver(drv)
 

@@ -3,6 +3,7 @@
 from utils import driver
 from . import match_scraper
 from . import stats_scraper
+from . import league_player_data
 
 #Summary of change from main: added parameter league_URL to allow choosing different leagues
 
@@ -173,6 +174,42 @@ class FotMobScraper:
             
         return all_results
     
+    def get_league_player_data(self, league_table_url, output_dir, progress_callback=None):
+        """
+        Scrapes full player data (profile + season stats) for every player
+        on every team in a league, given the league's table page URL.
+
+        This is a separate pipeline from get_matches/get_season_stats: it
+        answers "who plays where and how good are they" rather than "what
+        happened in matches". Writes one CSV per team plus a combined
+        league-wide CSV, all incrementally so progress survives a crash.
+
+        Resume: if interrupted, re-running with the same output_dir will
+        skip any team whose CSV already exists and pick up where it left
+        off. To force a full re-scrape, delete output_dir (or just the
+        specific team CSVs you want redone).
+
+        Args:
+            league_table_url (str): FotMob league table URL, e.g.
+                "https://www.fotmob.com/leagues/130/table/mls"
+            output_dir (str): Directory to write per-team and combined CSVs into
+            progress_callback (callable, optional): Callback for progress updates
+
+        Returns:
+            dict: Summary with keys league_name, season, teams_scraped,
+                teams_skipped_resume, teams_failed, total_players,
+                combined_csv_path, team_csv_paths. See
+                league_player_data.scrape_league_player_data() for full detail.
+        """
+        self.setup_driver()
+        return league_player_data.scrape_league_player_data(
+            self.driver,
+            league_table_url,
+            output_dir,
+            progress_callback
+        )
+
+
     def close(self):
         """Close the WebDriver instance."""
         driver.close_driver(self.driver)
