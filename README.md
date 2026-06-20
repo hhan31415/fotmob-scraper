@@ -1,6 +1,6 @@
 # FotMob Scraper ⚽
 
-A powerful Python-based web scraper for extracting detailed football match data and statistics from FotMob. Built with Selenium and Streamlit, it provides a user-friendly interface to scrape data by round or for an entire season.
+A powerful Python-based web scraper for extracting detailed football league, player, and match data and statistics from FotMob. Built with Selenium and Streamlit, it provides a user-friendly interface to scrape data by round or for an entire season.
 
 ## 🌟 Features
 
@@ -9,6 +9,7 @@ A powerful Python-based web scraper for extracting detailed football match data 
     -   Includes: Possession, xG, Shots, Passes, Defense, Duels, and more.
 -   **Scrape Matches & Stats (Season)**: Scrape data for an entire season (Rounds 1-38).
     -   *Note: This process takes time as it scrapes ~380 matches.*
+-   **Scrape all players in league and season**: Scrape all player data for a specific league and season (Rounds 1-38).
 -   **Pagination**: Easily navigate through large datasets with a paginated table view.
 -   **CSV Export**: Download the full scraped dataset (matches + detailed stats) as a CSV file.
 -   **Interactive UI**: Built with Streamlit for a smooth and responsive user experience.
@@ -41,12 +42,14 @@ A powerful Python-based web scraper for extracting detailed football match data 
     ```
 
 2.  **Use the Interface**:
+    -   **Season**: Enter the league you want to scrape.
     -   **Season**: Enter the season you want to scrape (e.g., `2024-2025`).
     -   **Round**: Select the round number (1-38) for round-specific scraping.
     -   **Buttons**:
         -   `🔍 Scrape Matches Only`: Fast scrape of basic match info for the selected round.
         -   `📊 Scrape Matches & Stats (Round)`: Detailed scrape for the selected round.
         -   `📅 Scrape Matches & Stats (Season)`: Detailed scrape for the entire season (all 38 rounds).
+        -   `Scrape all players in league and season`: Detailed scrape for player data of a league and season.
 
 3.  **View & Download**:
     -   Results are displayed in a paginated table.
@@ -55,20 +58,27 @@ A powerful Python-based web scraper for extracting detailed football match data 
 ## 📂 Project Structure
 
 ```
-football-scraper-data/
-├── app.py                  # Main Streamlit application (UI and orchestration)
-├── requirements.txt        # Python dependencies
-├── README.md               # Project documentation
-├── src/                    # Core scraping logic
+fotmob-scraper/
+├── app.py                     # Main Streamlit application (UI and orchestration)
+├── requirements.txt           # Python dependencies
+├── README.md                  # Project documentation
+├── .gitignore
+├── src/                       # Core scraping logic
 │   ├── __init__.py
-│   ├── scraper.py          # Main orchestrator class (FotMobScraper)
-│   ├── match_scraper.py    # Match list scraping logic
-│   └── stats_scraper.py    # Match statistics scraping logic
-└── utils/                  # Helper functions and utilities
-    ├── driver.py           # Selenium WebDriver management
-    ├── config.py           # Configuration settings
-    ├── app_helpers.py      # UI rendering and data processing helpers
-    └── scraper_helpers.py  # Scraping utility functions
+│   ├── scraper.py             # Main orchestrator class (FotMobScraper)
+│   ├── match_scraper.py       # Match list scraping logic
+│   ├── stats_scraper.py       # Match statistics scraping logic
+│   ├── player_scraper.py      # Individual player profile + season stats scraping
+│   ├── team_scraper.py        # Team squad scraping
+│   ├── league_scraper.py      # League table / team list scraping (handles conference splits)
+│   └── league_player_data.py  # Orchestrator: scrapes every player in a league, team by team
+└── utils/                     # Helper functions and utilities
+    ├── driver.py               # Selenium WebDriver management (setup, health checks, recovery)
+    ├── config.py                # Configuration settings
+    ├── app_helpers.py           # UI rendering and data processing helpers
+    ├── scraper_helpers.py       # Scraping utility functions
+    ├── csv_export.py            # Writes per-team and combined player CSVs (with resume support)
+    └── cleanup_player_csv.py    # Post-processing: currency conversion, column renaming, rounding
 ```
 
 ## ⚠️ Important Notes
