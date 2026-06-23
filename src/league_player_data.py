@@ -10,6 +10,7 @@ and can be run independently.
 """
 
 import os
+import re
 from . import league_scraper
 from . import team_scraper
 from . import player_scraper
@@ -17,6 +18,156 @@ from utils import csv_export
 from utils import driver as driver_utils
 
 
+ 
+def detect_url_type(url):
+    """
+    Detects whether a FotMob URL points to a league or a club, and
+    normalizes it to the right page type for scraping.
+ 
+    FotMob URL patterns:
+      League: fotmob.com/leagues/{id}/{page}/{slug}
+      Club:   fotmob.com/teams/{id}/{page}/{slug}
+ 
+    For leagues, we need the /table/ page (where team list lives in
+    __NEXT_DATA__). For clubs, we need the /squad/ page.
+ 
+    Args:
+        url (str): Any FotMob league or team URL
+ 
+    Returns:
+        tuple: (url_type, normalized_url) where url_type is one of
+            "league", "club", or "unknown", and normalized_url has the
+            correct page segment for scraping (/table/ or /squad/).
+    """
+    url = url.strip()
+ 
+    if "/leagues/" in url:
+        # Normalize to /table/ regardless of what page the user pasted
+        normalized = re.sub(
+            r"/leagues/(\d+)/[^/]+/(.+)",
+            r"/leagues/\1/table/\2",
+            url
+        )
+        # Ensure it's an absolute URL
+        if not normalized.startswith("http"):
+            normalized = "https://www.fotmob.com" + normalized
+        return "league", normalized
+ 
+    elif "/teams/" in url:
+        # Normalize to /squad/ regardless of what page the user pasted
+        normalized = re.sub(
+            r"/teams/(\d+)/[^/]+/(.+)",
+            r"/teams/\1/squad/\2",
+            url
+        )
+        if not normalized.startswith("http"):
+            normalized = "https://www.fotmob.com" + normalized
+        return "club", normalized
+ 
+    return "unknown", url
+ 
+ 
+def scrape_club_player_data(driver, club_url, output_dir, progress_callback=None):
+    """
+    Scrapes full player data (profile + season stats) for every player
+    on a single club's squad, given any FotMob team URL.
+ 
+    Simpler than scrape_league_player_data: one squad page, no resume
+    logic needed (fast enough to re-run from scratch), no teams.csv.
+ 
+    Args:
+        driver: WebDriver instance (already initialized)
+        club_url (str): Any FotMob team URL, e.g.
+            "https://www.fotmob.com/teams/9825/overview/bayern-munich"
+            (will be normalized to the /squad/ page automatically)
+        output_dir (str): Directory to write the club CSV into
+        progress_callback (callable, optional): Progress callback function
+ 
+    Returns:
+        dict: {
+            "team_name": str,
+            "total_players": int,
+            "combined_csv_path": str,  # same key as league scrape for UI compatibility
+        }
+        Returns {} if the squad could not be scraped.
+    """
+    _, squad_url = detect_url_type(club_url)
+ 
+    if progress_callback:
+        progress_callback(5, "Loading squad page...")
+ 
+    try:
+        squad_data = team_scraper.scrape_squad(driver, squad_url)
+    except Exception as e:
+        print(f"Failed to scrape squad for {club_url}: {e}")
+        driver = driver_utils.ensure_driver_alive(driver)
+        return {}
+ 
+    if not squad_data or not squad_data.get("players"):
+        print(f"No players found at {squad_url}")
+        return {}
+ 
+    team_name = squad_data.get("team_name", "unknown_team")
+    team_id = squad_data.get("team_id")
+    squad_players = squad_data["players"]
+    total = len(squad_players)
+    flat_rows = []
+ 
+    for j, squad_player in enumerate(squad_players):
+        percent = int((j / total) * 90) + 5
+        if progress_callback:
+            progress_callback(percent, f"{team_name}: player {j+1}/{total} - {squad_player.get('name')}")
+ 
+        try:
+            player_data = player_scraper.scrape_player(driver, squad_player["player_url"])
+        except Exception as e:
+            print(f"Failed to scrape player {squad_player.get('name')}: {e}")
+            driver = driver_utils.ensure_driver_alive(driver)
+            continue
+ 
+        if not player_data or not player_data.get("name"):
+            print(f"Empty result for {squad_player.get('name')}, skipping")
+            continue
+ 
+        player_data["position_group"] = squad_player.get("position_group")
+        player_data["team_id"] = team_id
+        player_data["league_name"] = squad_data.get("league_name")
+        player_data["league_group"] = None
+ 
+        flat_row = player_scraper.flatten_player_for_csv(player_data)
+        flat_row["position_group"] = player_data["position_group"]
+        flat_row["team_id"] = player_data["team_id"]
+        flat_row["league_name"] = player_data["league_name"]
+        flat_row["league_group"] = player_data["league_group"]
+        flat_rows.append(flat_row)
+ 
+    if progress_callback:
+        progress_callback(97, "Writing CSV...")
+ 
+    # Use write_team_csv for the per-club file, then also expose it as
+    # combined_csv_path so the UI display block works identically for
+    # both league and club scrapes without needing separate handling.
+    team_csv = csv_export.write_team_csv(output_dir, team_name, flat_rows)
+    combined_filename = f"{csv_export.safe_filename(team_name)}_players.csv"
+    combined_path = csv_export.write_combined_csv(output_dir, combined_filename, flat_rows)
+ 
+    if progress_callback:
+        progress_callback(100, f"Done! {len(flat_rows)} players scraped for {team_name}.")
+ 
+    print(f"Wrote {len(flat_rows)} players for {team_name} -> {combined_path}")
+ 
+    return {
+        "team_name": team_name,
+        "total_players": len(flat_rows),
+        "combined_csv_path": combined_path,
+        "team_csv_paths": {team_name: team_csv},
+        "league_name": squad_data.get("league_name"),
+        "season": squad_data.get("season"),
+        "teams_scraped": 1,
+        "teams_skipped_resume": 0,
+        "teams_failed": 0,
+    }
+ 
 def scrape_league_player_data(driver, league_table_url, output_dir, progress_callback=None):
     """
     Scrapes full player data (profile + season stats) for every player on

@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 from src import FotMobScraper
+from src.league_player_data import detect_url_type
 from utils.app_helpers import (
     run_scraper_with_progress,
     prepare_dataframe,
@@ -21,7 +22,7 @@ col3, col1, col2 = st.columns(3)
 with col3:
     league = st.selectbox(
         "League",
-        options=["Premier League", "MLS"],
+        options=["Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1", "MLS", "USL Championship"],
         help="Select a football league"
     )
 if league == "MLS":
@@ -32,6 +33,46 @@ elif league == "Premier League":
     league_URL = "https://www.fotmob.com/leagues/47/fixtures/premier-league"
     league_years = 1
     league_table_url = "https://www.fotmob.com/leagues/47/table/premier-league"
+elif league == "La Liga":
+    league_URL = "https://www.fotmob.com/leagues/87/fixtures/laliga"
+    league_years = 1
+    league_table_url = "https://www.fotmob.com/leagues/87/table/laliga"
+elif league == "Bundesliga":
+    league_URL = "https://www.fotmob.com/leagues/54/fixtures/bundesliga"
+    league_years = 1
+    league_table_url = "https://www.fotmob.com/leagues/54/table/bundesliga"
+elif league == "Serie A":
+    league_URL = "https://www.fotmob.com/leagues/55/fixtures/serie"
+    league_years = 1
+    league_table_url = "https://www.fotmob.com/leagues/55/table/serie"
+elif league == "Ligue 1":
+    league_URL = "https://www.fotmob.com/leagues/53/fixtures/ligue-1"
+    league_years = 1
+    league_table_url = "https://www.fotmob.com/leagues/53/table/ligue-1"
+elif league == "USL Championship":
+    league_URL = "https://www.fotmob.com/leagues/8972/fixtures/usl-championship"
+    league_years = 0
+    league_table_url = "https://www.fotmob.com/leagues/8972/table/usl-championship"
+    
+custom_fotmob_url = st.text_input(
+    "Or paste any FotMob league or club URL (overrides dropdown above)",
+    value="",
+    placeholder="e.g. https://www.fotmob.com/teams/9825/overview/bayern-munich",
+    help="Paste any FotMob league table or team page URL. The scraper will "
+         "automatically detect whether it's a league or a club and route "
+         "accordingly. Overrides the league dropdown above."
+)
+ 
+# Detect URL type and show a small status hint so the user knows what
+# will happen before they click the button
+if custom_fotmob_url.strip():
+    url_type, normalized_url = detect_url_type(custom_fotmob_url)
+    if url_type == "league":
+        st.caption(f"✅ Detected: **league** — will scrape all players in this league")
+    elif url_type == "club":
+        st.caption(f"✅ Detected: **club** — will scrape this team's squad (~25 players, no confirmation needed)")
+    else:
+        st.caption("⚠️ URL not recognized — please paste a fotmob.com league or team URL")
 
 with col1:
     if league_years == 0:
@@ -49,21 +90,15 @@ with col1:
 
 with col2:
     if league == "MLS":
-        round_num = st.number_input(
-        "Round", 
-        min_value=1, 
-        max_value=34, 
-        value=1,
-        help="Select round number (1-34)"
-    )
+        round_num = st.number_input("Round", min_value=1, max_value=34, value=1)
     elif league == "Premier League":
-        round_num = st.number_input(
-        "Round", 
-        min_value=1, 
-        max_value=38, 
-        value=1,
-        help="Select round number (1-38)"
-    )
+        round_num = st.number_input("Round", min_value=1, max_value=38, value=1)
+    elif league in ("La Liga", "Serie A"):
+        round_num = st.number_input("Round", min_value=1, max_value=38, value=1)
+    elif league in ("Bundesliga", "Ligue 1"):
+        round_num = st.number_input("Round", min_value=1, max_value=34, value=1)
+    elif league == "USL Championship":
+        round_num = st.number_input("Round", min_value=1, max_value=36, value=1)
 
 
 
@@ -217,49 +252,89 @@ if st.session_state.matches:
                         
                 except Exception as e:
                     st.error(f"An error occurred while fetching stats: {e}")
-st.subheader("Scrape League Player Data")
+st.subheader("👥 Scrape Player Data")
 st.markdown(
-    "Scrapes every player on every team in the selected league and season: profile info, "
-    "market value, and full season stats (xG, xGOT, passing, defending, etc.). "
-    "This is a separate scrape (one page load per player -- "
-    "expect 45-90+ minutes for a full league)."
+    "Scrapes every player's profile info, market value, and full season stats "
+    "(xG, xGOT, passing, defending, etc.). Use the dropdown above for a preset "
+    "league, or paste any FotMob league or club URL in the field above to "
+    "override."
 )
-
+ 
 if 'player_data_summary' not in st.session_state:
     st.session_state.player_data_summary = None
-
-confirm_long_scrape = st.checkbox(
-    f"I understand this will scrape ~25-35 teams in {league} and may take 45-90+ minutes"
-)
-
+ 
+# Determine what we're actually going to scrape
+if custom_fotmob_url.strip():
+    url_type, normalized_url = detect_url_type(custom_fotmob_url)
+else:
+    url_type = "league"
+    normalized_url = league_table_url  # from the existing dropdown logic
+ 
+# Only show the confirmation checkbox for league scrapes (slow)
+# Club scrapes are fast enough (~25 players) to skip it
+if url_type == "league":
+    confirm_long_scrape = st.checkbox(
+        f"I understand this will scrape all teams in this league and may take 45-90+ minutes"
+    )
+    button_disabled = not confirm_long_scrape
+    button_label = "🏃 Scrape All Players in League"
+else:
+    confirm_long_scrape = True  # no confirmation needed for single club
+    button_disabled = url_type == "unknown"  # only disable if URL wasn't recognized
+    button_label = "🏃 Scrape Club Squad"
+ 
 scrape_players_btn = st.button(
-    "🏃 Scrape all players in league and season",
+    button_label,
     type="primary",
     width='stretch',
-    disabled=not confirm_long_scrape,
-    help="Check the box above to enable. This will take a long time!"
+    disabled=button_disabled,
+    help="Check the box above to enable" if url_type == "league" and not confirm_long_scrape
+         else "Paste a valid FotMob URL above to enable" if url_type == "unknown"
+         else None
 )
-
+ 
 if scrape_players_btn:
     try:
-        output_dir = f"player_data_{league.replace(' ', '_').lower()}"
-        with st.spinner(f"Scraping all players in {league}... this will take a while."):
-            summary = run_scraper_with_progress(
-                st.session_state.scraper.get_league_player_data,
-                league_table_url, output_dir,
-                progress_divisor=100
-            )
-
-            if summary and summary.get("total_players", 0) > 0:
-                st.session_state.player_data_summary = summary
-                st.success(
-                    f"Successfully scraped {summary['total_players']} players "
-                    f"across {summary['teams_scraped'] + summary['teams_skipped_resume']} teams!"
+        if url_type == "league":
+            output_dir = f"player_data_{league.replace(' ', '_').lower()}"
+            if custom_fotmob_url.strip():
+                # Use a slug from the URL itself as the output folder name
+                import re
+                slug = re.search(r'/leagues/\d+/[^/]+/(.+)', normalized_url)
+                output_dir = f"player_data_{slug.group(1).replace('-', '_')}" if slug else output_dir
+ 
+            with st.spinner(f"Scraping all players... this will take a while."):
+                summary = run_scraper_with_progress(
+                    st.session_state.scraper.get_league_player_data,
+                    normalized_url, output_dir,
+                    progress_divisor=100
                 )
-                if summary.get("teams_failed", 0) > 0:
-                    st.warning(f"{summary['teams_failed']} team(s) failed to scrape and were skipped.")
-            else:
-                st.warning("No player data found. Please check the league table URL is correct.")
+ 
+        elif url_type == "club":
+            import re
+            slug = re.search(r'/teams/\d+/[^/]+/(.+)', normalized_url)
+            output_dir = f"player_data_{slug.group(1).replace('-', '_')}" if slug else "player_data_club"
+ 
+            with st.spinner(f"Scraping club squad..."):
+                summary = run_scraper_with_progress(
+                    st.session_state.scraper.get_club_player_data,
+                    normalized_url, output_dir,
+                    progress_divisor=100
+                )
+        else:
+            st.error("Please paste a valid FotMob league or team URL above.")
+            summary = None
+ 
+        if summary and summary.get("total_players", 0) > 0:
+            st.session_state.player_data_summary = summary
+            st.success(
+                f"Successfully scraped {summary['total_players']} players!"
+            )
+            if summary.get("teams_failed", 0) > 0:
+                st.warning(f"{summary['teams_failed']} team(s) failed to scrape and were skipped.")
+        elif summary is not None:
+            st.warning("No player data found. Please check the URL is a valid FotMob league or team page.")
+ 
     except Exception as e:
         st.error(f"An error occurred: {e}")
 

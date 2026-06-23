@@ -208,6 +208,30 @@ class FotMobScraper:
             output_dir,
             progress_callback
         )
+    def get_club_player_data(self, club_url, output_dir, progress_callback=None):
+        """
+        Scrapes full player data for every player on a single club's squad.
+ 
+        Accepts any FotMob team URL (overview, squad, fixtures, etc.) and
+        normalizes it to the squad page automatically.
+ 
+        Args:
+            club_url (str): Any FotMob team URL, e.g.
+                "https://www.fotmob.com/teams/9825/overview/bayern-munich"
+            output_dir (str): Directory to write the club CSV into
+            progress_callback (callable, optional): Progress callback
+ 
+        Returns:
+            dict: Summary with team_name, total_players, combined_csv_path.
+                See league_player_data.scrape_club_player_data() for full detail.
+        """
+        self.setup_driver()
+        return league_player_data.scrape_club_player_data(
+            self.driver,
+            club_url,
+            output_dir,
+            progress_callback
+        )
 
 
     def close(self):
