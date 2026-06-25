@@ -367,7 +367,7 @@ if st.session_state.player_data_summary:
         )
 
         with st.expander("Per-team CSV files"):
-            st.markdown(f"Individual team CSVs were also saved to `{os.path.dirname(combined_csv_path)}/`:")
+            st.markdown(f"If running locally: individual team CSVs were also saved to `{os.path.dirname(combined_csv_path)}/`:")
             for team_name, path in summary.get("team_csv_paths", {}).items():
                 st.markdown(f"- **{team_name}**: `{path}`")
     else:

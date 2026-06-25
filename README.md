@@ -22,7 +22,7 @@ A powerful Python-based web scraper for extracting detailed football league, pla
 -   **Internet Connection**
 -   *Note: The `chromedriver` is automatically managed and installed by the application, so no manual setup is required.*
 
-## 📦 Installation
+## Installation
 
 1.  **Clone the repository** (or download the source code):
     ```bash
@@ -35,7 +35,7 @@ A powerful Python-based web scraper for extracting detailed football league, pla
     pip install -r requirements.txt
     ```
 
-## 🚀 How to Run
+## How to Run
 
 1.  **Start the Streamlit app**:
     ```bash
