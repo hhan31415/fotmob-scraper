@@ -12,7 +12,7 @@ from utils.app_helpers import (
 
 st.set_page_config(page_title="FotMob Scraper", page_icon="⚽", layout="wide")
 
-st.title("FotMob Football Scraper")
+st.title("FotMob Data Scraper")
 st.subheader("Scrape match data by league, season, and round")
 
 # Create two columns for inputs
@@ -112,13 +112,13 @@ if 'scraper' not in st.session_state:
 col_btn1, col_btn2, col_btn3 = st.columns(3)
 
 with col_btn1:
-    scrape_matches_btn = st.button("🔍 Scrape Matches Only", type="primary", width='stretch')
+    scrape_matches_btn = st.button("Scrape Matches Only", type="primary", width='stretch')
 
 with col_btn2:
-    scrape_stats_btn = st.button("📊 Scrape Matches & Stats (Round)", type="primary", width='stretch')
+    scrape_stats_btn = st.button("Scrape Matches & Stats (Round)", type="primary", width='stretch')
 
 with col_btn3:
-    scrape_season_btn = st.button("📅 Scrape Matches & Stats (Season)", type="primary", width='stretch', help="Warning: This will take a long time!")
+    scrape_season_btn = st.button("Scrape Matches & Stats (Season)", type="primary", width='stretch', help="Warning: This will take a long time!")
 
 # Initialize scraper if needed
 if st.session_state.scraper is None:
@@ -193,7 +193,7 @@ if st.session_state.matches:
         
         # Match stats section (Only show if we don't have detailed stats yet)
         st.markdown("---")
-        st.subheader("📊 Match Statistics")
+        st.subheader("Match Statistics")
         
         # Create a selectbox for match selection
         match_options = [f"{i+1}. {m['home']} vs {m['away']} ({m['status']})" for i, m in enumerate(matches)]
@@ -203,7 +203,7 @@ if st.session_state.matches:
             format_func=lambda x: match_options[x]
         )
         
-        if st.button("📈 Get Match Stats", type="secondary"):
+        if st.button("Get Match Stats", type="secondary"):
             selected_match = matches[selected_match_idx]
             
             # Check if match has finished (only FT matches have stats)
@@ -248,11 +248,11 @@ if st.session_state.matches:
                                 else:
                                     st.info("No stats available for this section.")
                     else:
-                        st.error("❌ Could not retrieve stats. The match may not have detailed stats available.")
+                        st.error("Could not retrieve stats. The match may not have detailed stats available.")
                         
                 except Exception as e:
                     st.error(f"An error occurred while fetching stats: {e}")
-st.subheader("👥 Scrape Player Data")
+st.subheader("Scrape player data")
 st.markdown(
     "Scrapes every player's profile info, market value, and full season stats "
     "(xG, xGOT, passing, defending, etc.). Use the dropdown above for a preset "
@@ -277,11 +277,11 @@ if url_type == "league":
         f"I understand this will scrape all teams in this league and may take 45-90+ minutes"
     )
     button_disabled = not confirm_long_scrape
-    button_label = "🏃 Scrape All Players in League"
+    button_label = "Scrape All Players in League"
 else:
     confirm_long_scrape = True  # no confirmation needed for single club
     button_disabled = url_type == "unknown"  # only disable if URL wasn't recognized
-    button_label = "🏃 Scrape Club Squad"
+    button_label = "Scrape Club Squad"
  
 scrape_players_btn = st.button(
     button_label,
@@ -358,7 +358,7 @@ if st.session_state.player_data_summary:
             csv_bytes = f.read()
 
         st.download_button(
-            label="📥 Download All Player Data (CSV)",
+            label="Download All Player Data (CSV)",
             data=csv_bytes,
             file_name=os.path.basename(combined_csv_path),
             mime="text/csv",
@@ -366,7 +366,7 @@ if st.session_state.player_data_summary:
             width='stretch'
         )
 
-        with st.expander("📁 Per-team CSV files"):
+        with st.expander("Per-team CSV files"):
             st.markdown(f"Individual team CSVs were also saved to `{os.path.dirname(combined_csv_path)}/`:")
             for team_name, path in summary.get("team_csv_paths", {}).items():
                 st.markdown(f"- **{team_name}**: `{path}`")
@@ -374,7 +374,7 @@ if st.session_state.player_data_summary:
         st.warning("Combined CSV file not found on disk.")
 
 # Instructions
-with st.expander("ℹ️ How to use"):
+with st.expander("How to use"):
     st.markdown("""
     **Scraping Matches:**
     1. Choose the league you want
