@@ -27,7 +27,20 @@ def setup_driver():
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    
+    options.add_argument('--disable-setuid-sandbox')  # required on Linux
+    options.add_argument('--single-process')           # more stable on cloud
+    options.add_argument('--disable-extensions')
+
+    # On Streamlit Cloud, Chromium lives at a fixed path rather than being
+    # auto-found by webdriver_manager (which may not work in that environment)
+    import platform
+    if platform.system() == "Linux":
+        options.binary_location = "/usr/bin/chromium"
+        service = Service("/usr/bin/chromedriver")
+    else:
+        # Local Windows/Mac: use webdriver_manager as before
+        service = Service(ChromeDriverManager().install())
+
     driver = webdriver.Chrome(service=service, options=options)
     driver.set_page_load_timeout(30)
     return driver
