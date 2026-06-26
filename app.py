@@ -13,7 +13,10 @@ from utils.app_helpers import (
 st.set_page_config(page_title="FotMob Scraper", page_icon="⚽", layout="wide")
 
 st.title("FotMob Data Scraper")
-st.subheader("Scrape match data by league, season, and round")
+st.subheader("Scrape Match Data")
+st.markdown(
+    "Scrape match results and match statistics in a league. You can scrape an entire season's worth of stats or a specific round from that season."
+)
 
 # Create two columns for inputs
 col3, col1, col2 = st.columns(3)
@@ -224,11 +227,11 @@ if st.session_state.matches:
                     stats_scraper.close()
                     
                     if stats:
-                        st.success("✅ Stats loaded successfully!")
+                        st.success("Stats loaded successfully!")
                         
                         # Display stats by section
                         for section_name, section_stats in stats.items():
-                            with st.expander(f"📋 {section_name}", expanded=True):
+                            with st.expander(f"{section_name}", expanded=True):
                                 if section_stats:
                                     # Create a DataFrame for the section
                                     stats_df = pd.DataFrame([
@@ -252,7 +255,7 @@ if st.session_state.matches:
                         
                 except Exception as e:
                     st.error(f"An error occurred while fetching stats: {e}")
-st.subheader("Scrape player data")
+st.subheader("Scrape Player Data")
 st.markdown(
     "Scrapes every player's profile info, market value, and full season stats "
     "(xG, xGOT, passing, defending, etc.). Use the dropdown above for a preset "
