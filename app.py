@@ -32,30 +32,37 @@ if league == "MLS":
     league_URL = "https://www.fotmob.com/leagues/130/fixtures/mls"
     league_years = 0
     league_table_url = "https://www.fotmob.com/leagues/130/table/mls"
+    league_rounds = 34
 elif league == "Premier League":
     league_URL = "https://www.fotmob.com/leagues/47/fixtures/premier-league"
     league_years = 1
     league_table_url = "https://www.fotmob.com/leagues/47/table/premier-league"
+    league_rounds = 38
 elif league == "La Liga":
     league_URL = "https://www.fotmob.com/leagues/87/fixtures/laliga"
     league_years = 1
     league_table_url = "https://www.fotmob.com/leagues/87/table/laliga"
+    league_rounds = 38
 elif league == "Bundesliga":
     league_URL = "https://www.fotmob.com/leagues/54/fixtures/bundesliga"
     league_years = 1
     league_table_url = "https://www.fotmob.com/leagues/54/table/bundesliga"
+    league_rounds = 34
 elif league == "Serie A":
     league_URL = "https://www.fotmob.com/leagues/55/fixtures/serie"
     league_years = 1
     league_table_url = "https://www.fotmob.com/leagues/55/table/serie"
+    league_rounds = 38
 elif league == "Ligue 1":
     league_URL = "https://www.fotmob.com/leagues/53/fixtures/ligue-1"
     league_years = 1
     league_table_url = "https://www.fotmob.com/leagues/53/table/ligue-1"
+    league_rounds = 34
 elif league == "USL Championship":
     league_URL = "https://www.fotmob.com/leagues/8972/fixtures/usl-championship"
     league_years = 0
     league_table_url = "https://www.fotmob.com/leagues/8972/table/usl-championship"
+    league_rounds = 36
     
 custom_fotmob_url = st.text_input(
     "Or paste any FotMob league or club URL (overrides dropdown above)",
@@ -112,16 +119,21 @@ if 'scraper' not in st.session_state:
     st.session_state.scraper = None
 
 # Scrape buttons
-col_btn1, col_btn2, col_btn3 = st.columns(3)
+col_btn1, col_btn1_5, col_btn2, col_btn3 = st.columns(4)
 
 with col_btn1:
-    scrape_matches_btn = st.button("Scrape Matches Only", type="primary", width='stretch')
+    scrape_matches_btn = st.button("Scrape Matches Only (Round)", type="primary", width='stretch')
+
+with col_btn1_5:
+    scrape_matches_season_btn = st.button("Scrape Matches Only (Season)", type="primary", width='stretch')
 
 with col_btn2:
     scrape_stats_btn = st.button("Scrape Matches & Stats (Round)", type="primary", width='stretch')
 
 with col_btn3:
     scrape_season_btn = st.button("Scrape Matches & Stats (Season)", type="primary", width='stretch', help="Warning: This will take a long time!")
+
+
 
 # Initialize scraper if needed
 if st.session_state.scraper is None:
@@ -145,6 +157,24 @@ if scrape_matches_btn:
     except Exception as e:
         st.error(f"An error occurred: {e}")
 
+if scrape_matches_season_btn:
+    try:
+        with st.spinner("Starting season match scraper (this will take a while)..."):
+            season_matches = run_scraper_with_progress(
+                st.session_state.scraper.get_matches_season,
+                season, league_URL, league_rounds,
+                progress_divisor=100
+            )
+
+            if season_matches:
+                st.session_state.matches = season_matches
+                st.success(f"Successfully scraped {len(season_matches)} matches for the entire season!")
+            else:
+                st.warning("No matches found. Please check the season.")
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
+
+
 if scrape_stats_btn:
     try:
         with st.spinner("Starting scraper (this may take a while)..."):
@@ -167,10 +197,10 @@ if scrape_season_btn:
         with st.spinner("Starting season scraper (this will take a LONG time)..."):
             season_stats = run_scraper_with_progress(
                 st.session_state.scraper.get_season_stats,
-                season, league_URL, 
+                season, league_URL, league_rounds,
                 progress_divisor=100
             )
-            
+
             if season_stats:
                 st.session_state.matches = season_stats
                 st.success(f"Successfully scraped {len(season_stats)//2} matches for the entire season!")

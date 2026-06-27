@@ -134,45 +134,79 @@ class FotMobScraper:
             
         return results
 
-    def get_season_stats(self, season, league_URL, progress_callback=None):
+
+    def get_matches_season(self, season, league_URL, total_rounds=38, progress_callback=None):
         """
-        Scrape match data and stats for an entire season (Rounds 1-38).
-        
+        Scrape match list (no stats) for an entire season.
+
         Args:
-            season (str): Season in format "YYYY-YYYY"
+            season (str): Season in format "YYYY-YYYY" or "YYYY"
+            league_URL (str): FotMob fixtures URL for the league
+            total_rounds (int): Number of rounds in this league's season
             progress_callback (callable, optional): Callback for progress updates
-            
+
+        Returns:
+            list: List of match dictionaries (same shape as get_matches)
+        """
+        all_results = []
+
+        for round_num in range(1, total_rounds + 1):
+            def round_progress(percent, text, r=round_num):
+                if progress_callback:
+                    overall = int(((r - 1) / total_rounds * 100) + (percent / total_rounds))
+                    progress_callback(overall, f"[Round {r}/{total_rounds}] {text}")
+
+            try:
+                round_results = self.get_matches(season, round_num, league_URL,
+                                                progress_callback=round_progress)
+                all_results.extend(round_results)
+            except Exception as e:
+                print(f"Error scraping Round {round_num}: {e}")
+                continue
+
+        if progress_callback:
+            progress_callback(100, "Finished scraping season!")
+
+        return all_results
+
+
+    def get_season_stats(self, season, league_URL, total_rounds=38, progress_callback=None):
+        """
+        Scrape match data and stats for an entire season.
+
+        Args:
+            season (str): Season in format "YYYY-YYYY" or "YYYY"
+            league_URL (str): FotMob fixtures URL for the league
+            total_rounds (int): Number of rounds in this league's season
+            progress_callback (callable, optional): Callback for progress updates
+
         Returns:
             list: List of dictionaries, two per match (one for Home, one for Away)
         """
         all_results = []
-        total_rounds = 38
-        
+
         for round_num in range(1, total_rounds + 1):
             if progress_callback:
                 progress_callback(0, f"Starting Round {round_num}/{total_rounds}...")
-            
-            # Create a round-specific progress callback wrapper
-            def round_progress(percent, text):
+
+            def round_progress(percent, text, r=round_num):
                 if progress_callback:
-                    # Scale round progress to overall season progress
-                    # Each round is 1/38th of the total
-                    # But we also want to show the specific round activity
-                    overall_percent = int(((round_num - 1) / total_rounds * 100) + (percent / total_rounds))
-                    progress_callback(overall_percent, f"[Round {round_num}/{total_rounds}] {text}")
+                    overall = int(((r - 1) / total_rounds * 100) + (percent / total_rounds))
+                    progress_callback(overall, f"[Round {r}/{total_rounds}] {text}")
 
             try:
-                round_results = self.get_matches_with_stats(season, round_num, league_URL, progress_callback=round_progress)
+                round_results = self.get_matches_with_stats(season, round_num, league_URL,
+                                                            progress_callback=round_progress)
                 all_results.extend(round_results)
             except Exception as e:
                 print(f"Error scraping Round {round_num}: {e}")
-                # Continue to next round even if one fails
                 continue
-                
+
         if progress_callback:
             progress_callback(100, "Finished scraping season!")
-            
+
         return all_results
+    
     
     def get_league_player_data(self, league_table_url, output_dir, progress_callback=None):
         """
