@@ -2,8 +2,10 @@
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from webdriver_manager.chrome import ChromeDriverManager
 from utils import config
+import platform
 
 
 def setup_driver():
@@ -19,26 +21,21 @@ def setup_driver():
     Returns:
         webdriver.Chrome: Configured Chrome WebDriver instance
     """
-    # Use ChromeDriverManager to automatically install/update the driver
-    service = Service(ChromeDriverManager().install())
-    
     options = webdriver.ChromeOptions()
-    options.add_argument('--headless')
+    options.add_argument('--headless=new')
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--disable-setuid-sandbox')  # required on Linux
-    options.add_argument('--single-process')           # more stable on cloud
     options.add_argument('--disable-extensions')
 
-    # On Streamlit Cloud, Chromium lives at a fixed path rather than being
-    # auto-found by webdriver_manager (which may not work in that environment)
-    import platform
     if platform.system() == "Linux":
+        # Streamlit Cloud: Chromium installed via packages.txt at fixed path
+        options.add_argument('--disable-setuid-sandbox')
+        options.add_argument('--single-process')
         options.binary_location = "/usr/bin/chromium"
         service = Service("/usr/bin/chromedriver")
     else:
-        # Local Windows/Mac: use webdriver_manager as before
+        # Local Windows/Mac: webdriver_manager handles driver download
         service = Service(ChromeDriverManager().install())
 
     driver = webdriver.Chrome(service=service, options=options)
@@ -80,7 +77,7 @@ def ensure_driver_alive(driver):
 def close_driver(driver):
     """
     Closes the WebDriver instance.
-    
+
     Args:
         driver: WebDriver instance to close
     """
