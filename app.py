@@ -26,7 +26,7 @@ if 'player_data_summary' not in st.session_state:
 league = st.selectbox(
     "League",
     options=["Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1", "MLS", "USL Championship"],
-    help="Select a football league, or paste a custom FotMob URL in the relevant tab below"
+    help="Select a football league, or paste any FotMob URL in the relevant tab below"
 )
 
 if league == "MLS":
@@ -75,12 +75,12 @@ tab_matches, tab_players = st.tabs(["Match Scraping", "Player Scraping"])
 with tab_matches:
     st.markdown(
         "Scrape match results and statistics. Use the league dropdown above "
-        "or paste a custom FotMob league URL below."
+        "or paste any FotMob league URL below."
     )
 
     # Custom URL input (match tab -- league URLs only)
     custom_match_url = st.text_input(
-        "Paste a custom FotMob league URL (overrides dropdown)",
+        "Paste any FotMob league URL (overrides dropdown)",
         value="",
         placeholder="e.g. https://www.fotmob.com/leagues/87/overview/laliga",
         help="Paste any FotMob league URL. Must be a league (not a club) for match scraping.",
