@@ -80,7 +80,7 @@ with tab_matches:
 
     # Custom URL input (match tab -- league URLs only)
     custom_match_url = st.text_input(
-        "Or paste a custom FotMob league URL (overrides dropdown)",
+        "Paste a custom FotMob league URL (overrides dropdown)",
         value="",
         placeholder="e.g. https://www.fotmob.com/leagues/87/overview/laliga",
         help="Paste any FotMob league URL. Must be a league (not a club) for match scraping.",
@@ -290,7 +290,7 @@ with tab_players:
 
     # Custom URL input (player tab -- league or club)
     custom_player_url = st.text_input(
-        "Or paste any FotMob league or club URL (overrides dropdown)",
+        "Paste any FotMob league or club URL (overrides dropdown)",
         value="",
         placeholder="e.g. https://www.fotmob.com/teams/9825/overview/bayern-munich",
         help="Paste any FotMob league table or team page URL. Overrides the league dropdown above.",
