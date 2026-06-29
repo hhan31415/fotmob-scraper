@@ -33,40 +33,47 @@ if league == "MLS":
     league_URL = "https://www.fotmob.com/leagues/130/fixtures/mls"
     league_years = 0
     league_table_url = "https://www.fotmob.com/leagues/130/table/mls"
+    league_stats_url = "https://www.fotmob.com/leagues/130/stats/mls/teams"
     league_rounds = 34
 elif league == "Premier League":
     league_URL = "https://www.fotmob.com/leagues/47/fixtures/premier-league"
     league_years = 1
     league_table_url = "https://www.fotmob.com/leagues/47/table/premier-league"
+    league_stats_url = "https://www.fotmob.com/leagues/47/stats/premier-league/teams"
     league_rounds = 38
 elif league == "La Liga":
     league_URL = "https://www.fotmob.com/leagues/87/fixtures/laliga"
     league_years = 1
     league_table_url = "https://www.fotmob.com/leagues/87/table/laliga"
+    league_stats_url = "https://www.fotmob.com/leagues/87/stats/laliga/teams"
     league_rounds = 38
 elif league == "Bundesliga":
     league_URL = "https://www.fotmob.com/leagues/54/fixtures/bundesliga"
     league_years = 1
     league_table_url = "https://www.fotmob.com/leagues/54/table/bundesliga"
+    league_stats_url = "https://www.fotmob.com/leagues/54/stats/bundesliga/teams"
     league_rounds = 34
 elif league == "Serie A":
     league_URL = "https://www.fotmob.com/leagues/55/fixtures/serie"
     league_years = 1
     league_table_url = "https://www.fotmob.com/leagues/55/table/serie"
+    league_stats_url = "https://www.fotmob.com/leagues/55/stats/serie/teams"
     league_rounds = 38
 elif league == "Ligue 1":
     league_URL = "https://www.fotmob.com/leagues/53/fixtures/ligue-1"
     league_years = 1
     league_table_url = "https://www.fotmob.com/leagues/53/table/ligue-1"
+    league_stats_url = "https://www.fotmob.com/leagues/53/stats/ligue-1/teams"
     league_rounds = 34
 elif league == "USL Championship":
     league_URL = "https://www.fotmob.com/leagues/8972/fixtures/usl-championship"
     league_years = 0
     league_table_url = "https://www.fotmob.com/leagues/8972/table/usl-championship"
+    league_stats_url = "https://www.fotmob.com/leagues/8972/stats/usl-championship/teams"
     league_rounds = 36
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_matches, tab_players = st.tabs(["Match Scraping", "Player Scraping"])
+tab_matches, tab_players, tab_team_stats = st.tabs(["Match Stats", "Player Stats", "Team Stats"])
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -415,4 +422,107 @@ with tab_players:
         **Resume:** For a local host, if a league scrape is interrupted, re-run with the same league selected — already-completed teams are skipped automatically.
 
         **Note:** CSVs are saved locally. To force a full re-scrape, delete the corresponding `player_data_*/` folder.
+        """)
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 3: TEAM STATS
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_team_stats:
+    st.markdown(
+        "Scrape team statistics for a full league or a single club. "
+        "Use the league dropdown above or paste any FotMob URL below."
+    )
+
+    custom_stats_url = st.text_input(
+        "Or paste any FotMob league stats or team URL (overrides dropdown)",
+        value="",
+        placeholder="e.g. https://www.fotmob.com/teams/307691/overview/vancouver-whitecaps",
+        help="Paste a FotMob league stats URL or any team URL. "
+             "Scrapes all teams in the league, or just the one team.",
+        key="custom_stats_url"
+    )
+
+    if custom_stats_url.strip():
+        if "/teams/" in custom_stats_url:
+            stats_url_type = "team"
+            active_stats_url = custom_stats_url.strip()
+            st.caption("Detected: single team — will scrape this team's stats only")
+        elif "/leagues/" in custom_stats_url:
+            stats_url_type = "league"
+            # Normalize to stats/teams page
+            active_stats_url = re.sub(
+                r'(?:https://www\.fotmob\.com)?/leagues/(\d+)/[^/]+/([^/?]+).*',
+                r'https://www.fotmob.com/leagues/\1/stats/\2/teams',
+                custom_stats_url.strip()
+            )
+            st.caption(f"Detected: league — will scrape all teams. Using: `{active_stats_url}`")
+        else:
+            stats_url_type = "unknown"
+            active_stats_url = league_stats_url
+            st.caption("URL not recognized - using dropdown selection instead")
+    else:
+        stats_url_type = "league"
+        active_stats_url = league_stats_url
+
+    scrape_team_stats_btn = st.button(
+        "Scrape League Team Stats" if stats_url_type != "team" else "Scrape Team Stats",
+        type="primary",
+        use_container_width=True,
+    )
+
+    if 'team_stats_result' not in st.session_state:
+        st.session_state.team_stats_result = None
+
+    if scrape_team_stats_btn:
+        try:
+            if stats_url_type == "team":
+                with st.spinner("Scraping team stats..."):
+                    result = run_scraper_with_progress(
+                        st.session_state.scraper.get_team_stats,
+                        active_stats_url,
+                        progress_divisor=100
+                    )
+                    if result:
+                        st.session_state.team_stats_result = [result]
+                        st.success(f"Scraped stats for {result.get('team_name')}!")
+                    else:
+                        st.warning("No stats found. Please check the URL.")
+            else:
+                with st.spinner("Scraping league team stats..."):
+                    result = run_scraper_with_progress(
+                        st.session_state.scraper.get_league_team_stats,
+                        active_stats_url,
+                        progress_divisor=100
+                    )
+                    if result:
+                        st.session_state.team_stats_result = result
+                        st.success(f"Scraped stats for {len(result)} teams!")
+                    else:
+                        st.warning("No stats found. Please check the URL.")
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+
+    if st.session_state.team_stats_result:
+        result = st.session_state.team_stats_result
+        df = pd.DataFrame(result)
+
+        st.markdown(f"**{len(df)} team(s)**, {len(df.columns)} columns")
+        st.dataframe(df, use_container_width=True, hide_index=True, height=600)
+
+        csv_bytes = df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="Download Team Stats (CSV)",
+            data=csv_bytes,
+            file_name=f"team_stats_{league.replace(' ', '_').lower()}.csv",
+            mime="text/csv",
+            type="primary",
+            use_container_width=True
+        )
+
+    with st.expander("How to use"):
+        st.markdown("""
+        1. Select a league from the dropdown above, or paste any FotMob URL below.
+        2. For a **full league**: use the dropdown or paste any FotMob league URL and click **Scrape League Team Stats**.
+        3. For a **single team**: paste any FotMob team URL and click **Scrape Team Stats**.
+        4. Results appear as a table with one row per team and one column per stat category.
+        5. Download the full dataset as a CSV using the button below the table.
         """)
