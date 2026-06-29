@@ -1,19 +1,16 @@
 # FotMob Data Scraper
 
-A powerful Python-based web scraper for extracting detailed football league, player, and match data and statistics from FotMob. Built with Selenium and Streamlit, it provides a user-friendly interface to scrape data by round or for an entire season.
+A powerful Python-based web scraper for extracting detailed football league, player, club, and match data and statistics from FotMob. Built with Selenium and Streamlit, it provides a user-friendly interface to scrape data by round or for an entire season.
 
 ## Features
 
--   **Scrape Matches Only**: Quickly get a list of matches for a specific round (Date, Teams, Score, Status).
--   **Scrape Matches & Stats (Round)**: Get detailed statistics for every match in a selected round.
-    -   Includes: Possession, xG, Shots, Passes, Defense, Duels, and more.
--   **Scrape Matches & Stats (Season)**: Scrape data for an entire season.
-    -   *Note: This process takes time as it scrapes ~380 matches.*
+-   **Scrape Match Data**: Scrape match results and data from a specific league, season, and round.
+-   **Scrape Player Data**: Scrape all player data in a specific club or league.
+-   **Scrape Team Data**: Scrape a specific club's data or all teams in a specific league.
 -   **Pagination**: Easily navigate through large datasets with a paginated table view.
 -   **CSV Export**: Download the full scraped dataset (matches + detailed stats) as a CSV file.
 -   **Interactive UI**: Built with Streamlit for a smooth and responsive user experience.
--   **UPDATES: Scrape all players in league and season**: Scrape all player data for a specific league and team for a season.
--   **Streamlit App**: FotMob Data Scraper is now an app on streamlit! Check it out on https://fotmob-data-scraper.streamlit.app/
+-   **Streamlit App**: FotMob Data Scraper is now an app on Streamlit! Check it out on https://fotmob-data-scraper.streamlit.app/
 
 ## Prerequisites
 
@@ -74,6 +71,7 @@ fotmob-scraper/
 │   ├── player_scraper.py      # Individual player profile + season stats scraping
 │   ├── team_scraper.py        # Team squad scraping
 │   ├── league_scraper.py      # League table / team list scraping (handles conference splits)
+│   ├── team_stats_scraper.py  # Team stats scraping
 │   └── league_player_data.py  # Orchestrator: scrapes every player in a league, team by team
 └── utils/                     # Helper functions and utilities
     ├── __init__.py
