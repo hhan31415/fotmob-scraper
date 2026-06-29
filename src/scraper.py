@@ -4,6 +4,7 @@ from utils import driver
 from . import match_scraper
 from . import stats_scraper
 from . import league_player_data
+from . import team_stats_scraper
 
 #Summary of change from main: added parameter league_URL to allow choosing different leagues
 
@@ -266,7 +267,39 @@ class FotMobScraper:
             output_dir,
             progress_callback
         )
+    
+    def get_league_team_stats(self, league_stats_url, progress_callback=None):
+        """
+        Scrapes stats for every team in a league.
 
+        Args:
+            league_stats_url (str): FotMob league stats URL, e.g.
+                "https://www.fotmob.com/leagues/130/stats/mls/teams"
+            progress_callback (callable, optional): Progress callback
+
+        Returns:
+            list[dict]: One dict per team with all stat categories as columns.
+        """
+        self.setup_driver()
+        return team_stats_scraper.scrape_league_team_stats(
+            self.driver, league_stats_url, progress_callback
+        )
+
+    def get_team_stats(self, team_stats_url, progress_callback=None):
+        """
+        Scrapes stats for a single team.
+
+        Args:
+            team_stats_url (str): Any FotMob team URL (normalized automatically)
+            progress_callback (callable, optional): Progress callback
+
+        Returns:
+            dict: Single team stats with all stat categories as keys.
+        """
+        self.setup_driver()
+        return team_stats_scraper.scrape_team_stats(
+            self.driver, team_stats_url, progress_callback
+        )
 
     def close(self):
         """Close the WebDriver instance."""

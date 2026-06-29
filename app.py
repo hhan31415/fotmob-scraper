@@ -14,6 +14,27 @@ from utils.app_helpers import (
 st.set_page_config(page_title="FotMob Scraper", page_icon="⚽", layout="wide")
 st.title("FotMob Data Scraper")
 
+# Resource Intensive Dialogue Function
+@st.dialog("Warning: Resource Intensive Operation")
+def confirm_heavy_scrape(scrape_type):
+    st.warning(
+        f"**{scrape_type}** is a long-running operation that will likely exceed "
+        "the resource limits of Streamlit Cloud. "
+        "We recommend running this locally instead.\n\n"
+        "Download and run the app locally: "
+        "https://github.com/hhan31415/fotmob-scraper"
+    )
+    st.markdown("If you are running this locally, you can proceed.")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Continue anyway", type="primary", use_container_width=True):
+            st.session_state["confirmed_heavy_scrape"] = scrape_type
+            st.rerun()
+    with col2:
+        if st.button("Cancel", use_container_width=True):
+            st.session_state["confirmed_heavy_scrape"] = None
+            st.rerun()
+
 # ── Initialize scraper ────────────────────────────────────────────────────────
 if 'scraper' not in st.session_state:
     st.session_state.scraper = FotMobScraper()
@@ -21,6 +42,8 @@ if 'matches' not in st.session_state:
     st.session_state.matches = None
 if 'player_data_summary' not in st.session_state:
     st.session_state.player_data_summary = None
+if "confirmed_heavy_scrape" not in st.session_state:
+    st.session_state["confirmed_heavy_scrape"] = None
 
 # ── League selector (shared by both tabs) ─────────────────────────────────────
 league = st.selectbox(
@@ -197,6 +220,10 @@ with tab_matches:
             st.error(f"An error occurred: {e}")
 
     if scrape_season_btn:
+        confirm_heavy_scrape("Scrape Matches & Stats (Season)")
+
+    if st.session_state.get("confirmed_heavy_scrape") == "Scrape Matches & Stats (Season)":
+        st.session_state["confirmed_heavy_scrape"] = None
         try:
             with st.spinner("Scraping full season with stats (this will take a LONG time)..."):
                 matches = run_scraper_with_progress(
@@ -280,9 +307,8 @@ with tab_matches:
            - **Matches & Stats (Round)**: match list + detailed stats for one round
            - **Matches & Stats (Season)**: match list + detailed stats for entire season *(very slow)*
         4. For individual match stats, select a finished match (FT) from the dropdown and click **Get Match Stats**.
-
-        **Note:** CSVs are saved locally. To force a full re-scrape, delete the corresponding `player_data_*/` folder.
-        """)
+        """
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -291,15 +317,14 @@ with tab_matches:
 with tab_players:
     st.markdown(
         "Scrapes every player's profile info, market value, and full season stats "
-        "(xG, xGOT, passing, defending, etc.). Use the league dropdown above for a "
-        "preset league, or paste any FotMob league or club URL below."
+        "(xG, xGOT, passing, defending, etc.). Use the league dropdown above "
+        "or paste any FotMob league or club URL below."
     )
 
-    # Custom URL input (player tab -- league or club)
     custom_player_url = st.text_input(
         "Paste any FotMob league or club URL (overrides dropdown)",
         value="",
-        placeholder="e.g. https://www.fotmob.com/teams/9825/overview/bayern-munich",
+        placeholder="e.g. https://www.fotmob.com/teams/8586/overview/tottenham-hotspur",
         help="Paste any FotMob league table or team page URL. Overrides the league dropdown above.",
         key="custom_player_url"
     )
@@ -316,31 +341,34 @@ with tab_players:
         url_type = "league"
         normalized_url = league_table_url
 
-    # Confirmation checkbox for league scrapes only
     if url_type == "league":
-        confirm_long_scrape = st.checkbox(
-            "I understand this will scrape all teams in this league and may take 45-90+ minutes"
-        )
-        button_disabled = not confirm_long_scrape
         button_label = "Scrape All Players in League"
+        button_disabled = False
     else:
-        confirm_long_scrape = True
-        button_disabled = url_type == "unknown"
         button_label = "Scrape Club Squad"
+        button_disabled = url_type == "unknown"
 
     scrape_players_btn = st.button(
         button_label,
         type="primary",
         use_container_width=True,
         disabled=button_disabled,
-        help="Check the box above to enable" if url_type == "league" and not confirm_long_scrape
-             else "Paste a valid FotMob URL above to enable" if url_type == "unknown"
-             else None
+        key="scrape_players_btn",
+        help="Warning: This will take a long time!" if url_type == "league" else None
     )
 
     if scrape_players_btn:
+        if url_type == "league":
+            confirm_heavy_scrape("Scrape All Players in League")
+        elif url_type == "club":
+            st.session_state["confirmed_heavy_scrape"] = "Scrape Club Squad"
+            st.rerun()
+
+    if st.session_state.get("confirmed_heavy_scrape") in ("Scrape All Players in League", "Scrape Club Squad"):
+        scrape_type = st.session_state["confirmed_heavy_scrape"]
+        st.session_state["confirmed_heavy_scrape"] = None
         try:
-            if url_type == "league":
+            if scrape_type == "Scrape All Players in League":
                 if custom_player_url.strip():
                     slug = re.search(r'/leagues/\d+/[^/]+/(.+)', normalized_url)
                     output_dir = f"player_data_{slug.group(1).replace('-', '_')}" if slug else f"player_data_{league.replace(' ', '_').lower()}"
@@ -353,8 +381,7 @@ with tab_players:
                         normalized_url, output_dir,
                         progress_divisor=100
                     )
-
-            elif url_type == "club":
+            else:
                 slug = re.search(r'/teams/\d+/[^/]+/(.+)', normalized_url)
                 output_dir = f"player_data_{slug.group(1).replace('-', '_')}" if slug else "player_data_club"
 
@@ -364,9 +391,6 @@ with tab_players:
                         normalized_url, output_dir,
                         progress_divisor=100
                     )
-            else:
-                st.error("Please paste a valid FotMob league or team URL above.")
-                summary = None
 
             if summary and summary.get("total_players", 0) > 0:
                 st.session_state.player_data_summary = summary
@@ -374,7 +398,7 @@ with tab_players:
                 if summary.get("teams_failed", 0) > 0:
                     st.warning(f"{summary['teams_failed']} team(s) failed to scrape and were skipped.")
             elif summary is not None:
-                st.warning("No player data found. Please check the URL is a valid FotMob league or team page.")
+                st.warning("No player data found. Please check the URL.")
 
         except Exception as e:
             st.error(f"An error occurred: {e}")
@@ -396,7 +420,7 @@ with tab_players:
                 csv_bytes = f.read()
 
             st.download_button(
-                label="📥 Download Player Data (CSV)",
+                label="Download Player Data (CSV)",
                 data=csv_bytes,
                 file_name=os.path.basename(combined_csv_path),
                 mime="text/csv",
@@ -411,18 +435,18 @@ with tab_players:
         else:
             st.warning("Combined CSV file not found on disk.")
 
-    # Instructions
     with st.expander("How to use"):
         st.markdown("""
         1. Select a league from the dropdown above, or paste a custom FotMob URL below.
-        2. For a **full league scrape**: tick the confirmation checkbox and click **Scrape All Players in League**. Expect 45-90+ minutes.
-        3. For a **single club**: paste the club's FotMob URL and click **Scrape Club Squad**. Takes a few minutes.
+        2. For a **full league scrape**: click **Scrape All Players in League** and confirm the popup.
+        3. For a **single club**: paste the club's FotMob URL and click **Scrape Club Squad**.
         4. Results appear as a table with a download button once the scrape is complete.
 
-        **Resume:** For a local host, if a league scrape is interrupted, re-run with the same league selected — already-completed teams are skipped automatically.
+        **Note:** For local hosting, if a league scrape is interrupted, re-run with the same league selected — already-completed teams are skipped automatically.
 
         **Note:** CSVs are saved locally. To force a full re-scrape, delete the corresponding `player_data_*/` folder.
         """)
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB 3: TEAM STATS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -433,9 +457,9 @@ with tab_team_stats:
     )
 
     custom_stats_url = st.text_input(
-        "Or paste any FotMob league stats or team URL (overrides dropdown)",
+        "Paste any FotMob league stats or team URL (overrides dropdown)",
         value="",
-        placeholder="e.g. https://www.fotmob.com/teams/307691/overview/vancouver-whitecaps",
+        placeholder="e.g. https://www.fotmob.com/teams/8586/overview/tottenham-hotspur",
         help="Paste a FotMob league stats URL or any team URL. "
              "Scrapes all teams in the league, or just the one team.",
         key="custom_stats_url"
