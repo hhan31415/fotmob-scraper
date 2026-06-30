@@ -27,6 +27,7 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 import json
 import re
 import requests
+from . import league_scraper
 
 
 # Shared requests session with FotMob-appropriate headers, reused across
@@ -127,15 +128,85 @@ def scrape_league_team_stats(driver, league_stats_url, progress_callback=None):
                     _add_team_stat(teams, entry, header)
 
         if progress_callback:
+            progress_callback(95, "Fetching league table (points, wins, draws, losses)...")
+
+        # Merge in table data (points/wins/draws/losses/GD/position), since
+        # the stats page itself doesn't include these -- they only live on
+        # the league table page. Built from the same league_stats_url's
+        # league ID so it's always the matching table, not a separate input.
+        table_url = _stats_url_to_table_url(league_stats_url)
+        league_table_data = league_scraper.scrape_league_teams(driver, table_url)
+
+        for team_row in league_table_data.get("teams", []):
+            team_id = team_row.get("team_id")
+            if team_id in teams:
+                teams[team_id]["wins"] = team_row.get("wins")
+                teams[team_id]["draws"] = team_row.get("draws")
+                teams[team_id]["losses"] = team_row.get("losses")
+                teams[team_id]["points"] = team_row.get("points")
+                teams[team_id]["table_position"] = team_row.get("position")
+                teams[team_id]["group"] = team_row.get("group")
+                # Compute goal difference from scoresStr if available
+                gd = _parse_goal_difference(team_row)
+                if gd is not None:
+                    teams[team_id]["goal_difference"] = gd
+            elif team_id is not None:
+                # Team appeared in table but had no stats entries at all
+                # (extremely unlikely, but keep them so nothing's silently
+                # dropped)
+                teams[team_id] = {
+                    "team_id": team_id,
+                    "team_name": team_row.get("team_name"),
+                    "country_code": None,
+                    "matches_played": team_row.get("played"),
+                    "wins": team_row.get("wins"),
+                    "draws": team_row.get("draws"),
+                    "losses": team_row.get("losses"),
+                    "points": team_row.get("points"),
+                    "table_position": team_row.get("position"),
+                    "group": team_row.get("group"),
+                }
+
+        if progress_callback:
             progress_callback(100, f"Done. {len(teams)} teams.")
 
-        return sorted(teams.values(), key=lambda t: t.get("team_name", ""))
+        return sorted(teams.values(), key=lambda t: t.get("table_position") or 999)
 
     except Exception as e:
         print(f"Error scraping league team stats from {league_stats_url}: {e}")
         import traceback
         traceback.print_exc()
         return []
+
+
+def _stats_url_to_table_url(stats_url):
+    """
+    Converts a league stats URL into its corresponding table URL, so the
+    points/wins/draws/losses data is fetched from the matching league
+    automatically rather than needing a separate URL input.
+
+    e.g. "https://www.fotmob.com/leagues/130/stats/mls/teams"
+      -> "https://www.fotmob.com/leagues/130/table/mls"
+    """
+    match = re.search(r"/leagues/(\d+)/stats/([^/]+)/teams", stats_url)
+    if not match:
+        # Fall back to a generic rewrite for any /leagues/{id}/{page}/{slug} shape
+        return re.sub(
+            r"(?:https://www\.fotmob\.com)?/leagues/(\d+)/[^/]+/([^/?]+).*",
+            r"https://www.fotmob.com/leagues/\1/table/\2",
+            stats_url
+        )
+    league_id, slug = match.group(1), match.group(2)
+    return f"https://www.fotmob.com/leagues/{league_id}/table/{slug}"
+
+
+def _parse_goal_difference(team_row):
+    """
+    Returns goal difference from a league_scraper team row. league_scraper
+    now carries this through directly from the raw FotMob table JSON's
+    goalConDiff field (confirmed: goalConDiff = goals for - goals against).
+    """
+    return team_row.get("goal_difference")
 
 
 def scrape_team_stats(driver, team_stats_url, progress_callback=None):

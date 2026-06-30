@@ -189,6 +189,7 @@ def _parse_league_table(next_data):
                 "losses": row.get("losses"),
                 "points": row.get("pts"),
                 "position": row.get("idx"),
+                "goal_difference": row.get("goalConDiff"),
             })
 
     # If there were no sub-groups at all (single-table league), some leagues
@@ -218,6 +219,7 @@ def _parse_league_table(next_data):
                 "losses": row.get("losses"),
                 "points": row.get("pts"),
                 "position": row.get("idx"),
+                "goal_difference": row.get("goalConDiff"),
             })
 
     return result
@@ -246,7 +248,51 @@ def _overview_url_to_squad_url(overview_url):
     return f"https://www.fotmob.com{squad_path}"
 
 
-def debug_dump_league_groups(driver, league_table_url):
+def detect_league_rounds(driver, league_fixtures_url):
+    """
+    Detects the total number of rounds in a league by reading the max
+    round number from the fixtures page's __NEXT_DATA__ JSON.
+
+    Args:
+        driver: WebDriver instance (already initialized)
+        league_fixtures_url (str): FotMob league fixtures URL, e.g.
+            "https://www.fotmob.com/leagues/130/fixtures/mls"
+
+    Returns:
+        int: Total number of rounds, or None if detection failed
+    """
+    try:
+        driver.get(league_fixtures_url)
+        next_data = _extract_next_data(driver)
+        if not next_data:
+            return None
+
+        page_props = next_data.get("props", {}).get("pageProps", {})
+        all_matches = (
+            page_props.get("fixtures", {})
+            .get("allMatches", [])
+        )
+
+        if not all_matches:
+            return None
+
+        rounds = []
+        for match in all_matches:
+            r = match.get("round")
+            if r is not None:
+                try:
+                    rounds.append(int(r))
+                except (ValueError, TypeError):
+                    pass
+
+        return max(rounds) if rounds else None
+
+    except Exception as e:
+        print(f"Could not detect round count from {league_fixtures_url}: {e}")
+        return None
+
+
+
     """
     Development utility: navigates to a league table page and prints
     the groups found plus team counts per group, to spot-check against
