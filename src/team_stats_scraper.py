@@ -140,6 +140,10 @@ def scrape_league_team_stats(driver, league_stats_url, season=None, progress_cal
         # the league table page. Built from the same league_stats_url's
         # league ID so it's always the matching table, not a separate input.
         table_url = _stats_url_to_table_url(league_stats_url)
+        if season:
+            sep = '&' if '?' in table_url else '?'
+            url_param = season.replace('/', '-')
+            table_url = f"{table_url}{sep}season={url_param}"
         league_table_data = league_scraper.scrape_league_teams(driver, table_url)
 
         for team_row in league_table_data.get("teams", []):
