@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import re
 from src import FotMobScraper
+from src import team_stats_scraper
 from src.league_player_data import detect_url_type
 from utils.app_helpers import (
     run_scraper_with_progress,
@@ -486,6 +487,39 @@ with tab_team_stats:
     else:
         stats_url_type = "league"
         active_stats_url = league_stats_url
+    if 'available_seasons' not in st.session_state:
+        st.session_state.available_seasons = []
+    if 'selected_season' not in st.session_state:
+        st.session_state.selected_season = None
+
+    col_season1, col_season2 = st.columns([1, 2])
+    with col_season1:
+        if st.button("Load available seasons", type="secondary",
+                    key="load_seasons_btn"):
+            with st.spinner("Fetching seasons..."):
+                st.session_state.scraper.setup_driver()
+                seasons = team_stats_scraper.get_available_seasons(
+                    st.session_state.scraper.driver, active_stats_url
+                )
+                if seasons:
+                    st.session_state.available_seasons = seasons
+                    st.success(f"Found {len(seasons)} seasons.")
+                else:
+                    st.warning("Could not load seasons.")
+
+    with col_season2:
+        if st.session_state.available_seasons:
+            selected_season = st.selectbox(
+                "Season",
+                options=["Current season"] + st.session_state.available_seasons,
+                key="team_stats_season_select"
+            )
+            st.session_state.selected_season = (
+                None if selected_season == "Current season" else selected_season
+            )
+        else:
+            st.caption("Click 'Load available seasons' to select a historical season.")
+            st.session_state.selected_season = None
 
     scrape_team_stats_btn = st.button(
         "Scrape League Team Stats" if stats_url_type != "team" else "Scrape Team Stats",
@@ -513,10 +547,11 @@ with tab_team_stats:
             else:
                 with st.spinner("Scraping league team stats..."):
                     result = run_scraper_with_progress(
-                        st.session_state.scraper.get_league_team_stats,
-                        active_stats_url,
-                        progress_divisor=100
-                    )
+                            st.session_state.scraper.get_league_team_stats,
+                            active_stats_url,
+                            st.session_state.get("selected_season"),
+                            progress_divisor=100
+                        )
                     if result:
                         st.session_state.team_stats_result = result
                         st.success(f"Scraped stats for {len(result)} teams!")
@@ -533,10 +568,11 @@ with tab_team_stats:
         st.dataframe(df, use_container_width=True, hide_index=True, height=600)
 
         csv_bytes = df.to_csv(index=False).encode("utf-8")
+        season_label = (st.session_state.get("selected_season") or "current").replace("/", "-")
         st.download_button(
             label="Download Team Stats (CSV)",
             data=csv_bytes,
-            file_name=f"team_stats_{league.replace(' ', '_').lower()}.csv",
+            file_name=f"team_stats_{league.replace(' ', '_').lower()}_{season_label}.csv",
             mime="text/csv",
             type="primary",
             use_container_width=True

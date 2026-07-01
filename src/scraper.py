@@ -268,7 +268,7 @@ class FotMobScraper:
             progress_callback
         )
     
-    def get_league_team_stats(self, league_stats_url, progress_callback=None):
+    def get_league_team_stats(self, league_stats_url, season=None, progress_callback=None):
         """
         Scrapes stats for every team in a league.
 
@@ -282,9 +282,9 @@ class FotMobScraper:
         """
         self.setup_driver()
         return team_stats_scraper.scrape_league_team_stats(
-            self.driver, league_stats_url, progress_callback
+            self.driver, league_stats_url, season, progress_callback
         )
-
+    
     def get_team_stats(self, team_stats_url, progress_callback=None):
         """
         Scrapes stats for a single team.
@@ -299,6 +299,12 @@ class FotMobScraper:
         self.setup_driver()
         return team_stats_scraper.scrape_team_stats(
             self.driver, team_stats_url, progress_callback
+        )
+    
+    def get_available_seasons(self, league_stats_url):
+        self.setup_driver()
+        return team_stats_scraper.get_available_seasons(
+            self.driver, league_stats_url
         )
 
     def close(self):

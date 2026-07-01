@@ -39,7 +39,7 @@ _SESSION.headers.update({
 })
 
 
-def scrape_league_team_stats(driver, league_stats_url, progress_callback=None):
+def scrape_league_team_stats(driver, league_stats_url, season=None, progress_callback=None):
     """
     Scrapes stats for every team in a league.
 
@@ -60,6 +60,11 @@ def scrape_league_team_stats(driver, league_stats_url, progress_callback=None):
             + one rank key per stat (e.g. "FotMob rating rank")
         Returns [] if the page could not be parsed.
     """
+    if season:
+        url_param = season.replace('/', '-')
+        sep = '&' if '?' in league_stats_url else '?'
+        league_stats_url = f"{league_stats_url}{sep}season={url_param}"
+
     if progress_callback:
         progress_callback(5, "Loading league stats page...")
 
@@ -354,3 +359,23 @@ def _extract_next_data(driver):
     except json.JSONDecodeError as e:
         print(f"Failed to parse __NEXT_DATA__ JSON: {e}")
         return None
+    
+def get_available_seasons(driver, league_stats_url):
+    """
+    Returns the list of available seasons for a league stats page.
+    Used to populate the season dropdown in the UI.
+
+    Returns:
+        list[str]: e.g. ['2026/2027', '2025/2026', '2024/2025', ...]
+        or [] if unavailable.
+    """
+    try:
+        driver.get(league_stats_url)
+        next_data = _extract_next_data(driver)
+        if not next_data:
+            return []
+        page_props = next_data.get("props", {}).get("pageProps", {})
+        return page_props.get("allAvailableSeasons", [])
+    except Exception as e:
+        print(f"Could not fetch available seasons: {e}")
+        return []
