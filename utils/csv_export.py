@@ -96,7 +96,7 @@ def write_team_csv(output_dir, team_name, flat_player_rows):
     df = round_floats(df, decimals=2)
     df = reorder_columns(df)
 
-    df.to_csv(path, index=False)
+    df.to_csv(path, index=False, na_rep = '')
     return path
 
 
@@ -127,7 +127,7 @@ def write_combined_csv(output_dir, combined_filename, all_flat_player_rows):
     df = round_floats(df, decimals=2)
     df = reorder_columns(df)
 
-    df.to_csv(path, index=False)
+    df.to_csv(path, index=False, na_rep= '')
     return path
 
 
