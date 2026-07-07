@@ -1,20 +1,4 @@
-"""Orchestration for scraping every player in a league.
-
-Ties together league_scraper (teams in the league), team_scraper (squad
-per team), and player_scraper (stats per player), writing results
-incrementally to CSV via csv_export so a crash or interruption doesn't
-lose completed teams.
-
-Key flags on every player row:
-  - played_in_league: True if the player appeared in the target league
-    this season (checked via statSeasons[].tournaments[].tournamentId).
-    Handles reserve players (e.g. Brunet whose mainLeague is MLS Next Pro
-    but who played some MLS matches) and inactive players (e.g. Joe Willis
-    who has no 2026 MLS entry at all) with one unified check.
-  - skip_no_league_matches: if True, players with played_in_league=False
-    are excluded from the CSV entirely. Stats are always nulled for these
-    players regardless of this flag.
-"""
+"""Orchestration for scraping every player in a league."""
 
 import os
 import re
@@ -44,9 +28,23 @@ def scrape_league_player_data(
     driver,
     league_table_url,
     output_dir,
-    skip_no_league_matches=False,
+    skip_reserves=False,
+    skip_zero_match=False,
     progress_callback=None,
 ):
+    """
+    Scrapes full player data for every player on every team in a league.
+
+    Args:
+        driver: WebDriver instance (already initialized)
+        league_table_url (str): FotMob league table URL
+        output_dir (str): Directory to write per-team and combined CSVs into
+        skip_reserves (bool): If True, loan/reserve players (whose FotMob
+            primary club differs from the squad team) are not scraped.
+        skip_zero_match (bool): If True, players with no matches in the
+            current season (is_current_season=False) are excluded from CSV.
+        progress_callback (callable, optional): Progress callback function
+    """
     summary = {
         "league_name": None,
         "season": None,
@@ -73,7 +71,6 @@ def scrape_league_player_data(
     teams = league_data["teams"]
     total_teams = len(teams)
     all_flat_rows = []
-
     expected_season = league_data.get("season")
 
     teams_csv_path = csv_export.write_teams_csv(output_dir, teams)
@@ -133,40 +130,49 @@ def scrape_league_player_data(
                 print(f"Empty result for {squad_player.get('name')}, skipping")
                 continue
 
-            # Unified league participation check:
-            # played_in_league=True  -> player appeared in target league this season
-            # played_in_league=False -> reserve/inactive player, stats nulled
-            # played_in_league=None  -> could not determine (no league_id given)
-            played_in_league = player_data.get("is_current_season")
+            # --- Reserve/loan detection ---
+            # True if this player's FotMob primary club differs from the
+            # squad team they were scraped from.
+            is_loan_or_reserve = player_data.get("team") != team_name
 
-            if played_in_league is False:
+            if skip_reserves and is_loan_or_reserve:
+                print(f"Skipping loan/reserve player {player_data.get('name')} "
+                      f"(primary team: {player_data.get('team')!r})")
+                continue
+
+            # --- Season/match validation ---
+            # is_current_season=True  -> played matches this season
+            # is_current_season=False -> no matches this season (stale data)
+            # is_current_season=None  -> could not determine
+            is_current_season = player_data.get("is_current_season")
+
+            # Always null stats for stale-season players so prior-season
+            # numbers don't silently appear as current data.
+            if is_current_season is False:
                 player_data["season_summary"] = {}
                 player_data["detailed_stats"] = {}
                 player_data["detailed_stats_per90"] = {}
                 player_data["season_league"] = None
                 player_data["season_year"] = None
 
-            if skip_no_league_matches and played_in_league is False:
-                print(f"Skipping {player_data.get('name')} "
-                      f"(no matches in target league this season)")
+            if skip_zero_match and is_current_season is False:
+                print(f"Skipping {player_data.get('name')} (no matches this season)")
                 continue
 
             player_data["position_group"] = squad_player.get("position_group")
             player_data["team_id"] = team["team_id"]
             player_data["league_name"] = league_data.get("league_name")
             player_data["league_group"] = team.get("group")
-            player_data["played_in_league"] = played_in_league
-            player_data["is_loan_or_reserve"] = (
-                player_data.get("team") != team_name
-            )
+            player_data["is_loan_or_reserve"] = is_loan_or_reserve
+            player_data["played_in_league"] = is_current_season
 
             flat_row = player_scraper.flatten_player_for_csv(player_data)
             flat_row["position_group"] = player_data["position_group"]
             flat_row["team_id"] = player_data["team_id"]
             flat_row["league_name"] = player_data["league_name"]
             flat_row["league_group"] = player_data["league_group"]
-            flat_row["played_in_league"] = played_in_league
-            flat_row["is_loan_or_reserve"] = player_data["is_loan_or_reserve"]
+            flat_row["is_loan_or_reserve"] = is_loan_or_reserve
+            flat_row["played_in_league"] = is_current_season
 
             team_flat_rows.append(flat_row)
 
@@ -204,7 +210,8 @@ def scrape_club_player_data(
     driver,
     club_url,
     output_dir,
-    skip_no_league_matches=False,
+    skip_reserves=False,
+    skip_zero_match=False,
     progress_callback=None,
 ):
     """
@@ -214,12 +221,10 @@ def scrape_club_player_data(
         driver: WebDriver instance (already initialized)
         club_url (str): Any FotMob team URL (normalized to /squad/ automatically)
         output_dir (str): Directory to write the club CSV into
-        skip_no_league_matches (bool): If True, players who have not played
-            in the club's primary league this season are excluded.
+        skip_reserves (bool): If True, loan/reserve players are skipped.
+        skip_zero_match (bool): If True, players with no matches this season
+            are excluded from the CSV.
         progress_callback (callable, optional): Progress callback function
-
-    Returns:
-        dict with team_name, total_players, combined_csv_path, etc.
     """
     _, squad_url = detect_url_type(club_url)
 
@@ -242,8 +247,6 @@ def scrape_club_player_data(
     squad_players = squad_data["players"]
     total = len(squad_players)
     expected_season = squad_data.get("season")
-    # Use the team's primary league ID for the participation check
-
     flat_rows = []
 
     for j, squad_player in enumerate(squad_players):
@@ -269,36 +272,42 @@ def scrape_club_player_data(
             print(f"Empty result for {squad_player.get('name')}, skipping")
             continue
 
-        played_in_league = player_data.get("is_current_season")
+        # Reserve/loan detection
+        is_loan_or_reserve = player_data.get("team") != team_name
 
-        if played_in_league is False:
+        if skip_reserves and is_loan_or_reserve:
+            print(f"Skipping loan/reserve player {player_data.get('name')} "
+                  f"(primary team: {player_data.get('team')!r})")
+            continue
+
+        # Season/match validation
+        is_current_season = player_data.get("is_current_season")
+
+        if is_current_season is False:
             player_data["season_summary"] = {}
             player_data["detailed_stats"] = {}
             player_data["detailed_stats_per90"] = {}
             player_data["season_league"] = None
             player_data["season_year"] = None
 
-        if skip_no_league_matches and played_in_league is False:
-            print(f"Skipping {player_data.get('name')} "
-                  f"(no matches in target league this season)")
+        if skip_zero_match and is_current_season is False:
+            print(f"Skipping {player_data.get('name')} (no matches this season)")
             continue
 
         player_data["position_group"] = squad_player.get("position_group")
         player_data["team_id"] = team_id
         player_data["league_name"] = squad_data.get("league_name")
         player_data["league_group"] = None
-        player_data["played_in_league"] = played_in_league
-        player_data["is_loan_or_reserve"] = (
-                player_data.get("team") != team_name
-            )
+        player_data["is_loan_or_reserve"] = is_loan_or_reserve
+        player_data["played_in_league"] = is_current_season
 
         flat_row = player_scraper.flatten_player_for_csv(player_data)
         flat_row["position_group"] = player_data["position_group"]
         flat_row["team_id"] = player_data["team_id"]
         flat_row["league_name"] = player_data["league_name"]
         flat_row["league_group"] = player_data["league_group"]
-        flat_row["played_in_league"] = played_in_league
-        flat_row["is_loan_or_reserve"] = player_data["is_loan_or_reserve"]
+        flat_row["is_loan_or_reserve"] = is_loan_or_reserve
+        flat_row["played_in_league"] = is_current_season
         flat_rows.append(flat_row)
 
     if progress_callback:
