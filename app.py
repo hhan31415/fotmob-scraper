@@ -348,6 +348,28 @@ with tab_players:
     else:
         button_label = "Scrape Club Squad"
         button_disabled = url_type == "unknown"
+    
+    #Buttons for skipping players and showing sql-friendly column names
+    col_opt1, col_opt2, col_opt3 = st.columns(3)
+    with col_opt1:
+        skip_reserves = st.checkbox(
+            "Skip reserve/loan players",
+            help="Excludes players whose FotMob primary club doesn't match "
+                 "the league's first-team roster list."
+        )
+    with col_opt2:
+        skip_zero_match = st.checkbox(
+            "Skip players with no current season data",
+            help="Excludes players who haven't played this season "
+                 "(FotMob shows their last active season's stats instead)."
+        )
+    with col_opt3:
+        sql_friendly_cols = st.checkbox(
+            "snake_case column names",
+            help="Renames columns to snake_case on download "
+                 "(e.g. 'Shooting - xGOT (per90)' -> 'shooting_xgot_per90'). "
+                 "Does not affect saved CSVs."
+        )
 
     scrape_players_btn = st.button(
         button_label,
@@ -380,6 +402,7 @@ with tab_players:
                     summary = run_scraper_with_progress(
                         st.session_state.scraper.get_league_player_data,
                         normalized_url, output_dir,
+                        skip_reserves, skip_zero_match,
                         progress_divisor=100
                     )
             else:
@@ -390,6 +413,7 @@ with tab_players:
                     summary = run_scraper_with_progress(
                         st.session_state.scraper.get_club_player_data,
                         normalized_url, output_dir,
+                        skip_reserves, skip_zero_match,
                         progress_divisor=100
                     )
 
@@ -417,8 +441,17 @@ with tab_players:
 
             st.dataframe(player_df, use_container_width=True, hide_index=True, height=750)
 
-            with open(combined_csv_path, "rb") as f:
-                csv_bytes = f.read()
+            # Apply SQL-friendly column rename to the in-memory df only
+            # (does not affect the on-disk CSV)
+            download_df = player_df.copy()
+            if sql_friendly_cols:
+                from utils.cleanup_player_csv import to_sql_friendly_columns
+                download_df = to_sql_friendly_columns(download_df)
+
+            # Generate bytes from the (possibly renamed) in-memory df
+            # instead of reading from disk, so the rename only affects
+            # what the user downloads, not what's saved
+            csv_bytes = download_df.to_csv(index=False).encode("utf-8")
 
             st.download_button(
                 label="Download Player Data (CSV)",
@@ -428,7 +461,7 @@ with tab_players:
                 type="primary",
                 use_container_width=True
             )
-
+            
             with st.expander("Per-team CSV files"):
                 st.markdown(f"Individual team CSVs saved to `{os.path.dirname(combined_csv_path)}/`:")
                 for team_name, path in summary.get("team_csv_paths", {}).items():

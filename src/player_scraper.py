@@ -33,7 +33,7 @@ import json
 import re
 
 
-def scrape_player(driver, player_url, progress_callback=None):
+def scrape_player(driver, player_url, expected_season=None, progress_callback=None):
     """
     Scrapes full profile + season stats for a single player.
 
@@ -41,6 +41,7 @@ def scrape_player(driver, player_url, progress_callback=None):
         driver: WebDriver instance (already initialized)
         player_url (str): FotMob player URL, e.g.
             "https://www.fotmob.com/players/1233655/alex-scott"
+        league_id (str): League id for the league
         progress_callback (callable, optional): Progress callback function
 
     Returns:
@@ -91,11 +92,23 @@ def scrape_player(driver, player_url, progress_callback=None):
             progress_callback(60, "Parsing player data...")
 
         result = _parse_player_data(next_data, player_id, player_url)
+        # Flag 1: did this player play any matches in the current season
+        # at all? Uses mainLeague.season (already parsed into season_year)
+        # and the Matches count from season_summary.
+        if expected_season and result.get("season_year"):
+            season_matches = result.get("season_summary", {}).get("Matches", 0) or 0
+            result["is_current_season"] = (
+                str(result["season_year"]).strip() == str(expected_season).strip()
+                and int(season_matches) > 0
+            )
+        else:
+            result["is_current_season"] = None
 
         if progress_callback:
             progress_callback(100, "Finished!")
 
         return result
+    
 
     except Exception as e:
         # Data-parsing errors (e.g. mainLeague is None for a near-zero-

@@ -209,7 +209,9 @@ class FotMobScraper:
         return all_results
     
     
-    def get_league_player_data(self, league_table_url, output_dir, progress_callback=None):
+    def get_league_player_data(self, league_table_url, output_dir,
+                            skip_reserves=False, skip_zero_match=False,
+                            progress_callback=None):
         """
         Scrapes full player data (profile + season stats) for every player
         on every team in a league, given the league's table page URL.
@@ -229,6 +231,8 @@ class FotMobScraper:
                 "https://www.fotmob.com/leagues/130/table/mls"
             output_dir (str): Directory to write per-team and combined CSVs into
             progress_callback (callable, optional): Callback for progress updates
+            skip_reserves (bool): skips reserve/loan players
+            skip_zero_match (bool): skips players with zero matches
 
         Returns:
             dict: Summary with keys league_name, season, teams_scraped,
@@ -241,9 +245,11 @@ class FotMobScraper:
             self.driver,
             league_table_url,
             output_dir,
-            progress_callback
+            skip_reserves=skip_reserves,
+            skip_zero_match=skip_zero_match,
+            progress_callback=progress_callback,
         )
-    def get_club_player_data(self, club_url, output_dir, progress_callback=None):
+    def get_club_player_data(self, club_url, output_dir, skip_reserves=False, skip_zero_match=False, progress_callback=None):
         """
         Scrapes full player data for every player on a single club's squad.
  
@@ -254,6 +260,8 @@ class FotMobScraper:
             club_url (str): Any FotMob team URL, e.g.
                 "https://www.fotmob.com/teams/9825/overview/bayern-munich"
             output_dir (str): Directory to write the club CSV into
+            skip_reserves (bool): Skips reserve and loan players
+            skip_zero_match (bool): Skips players with zero matches
             progress_callback (callable, optional): Progress callback
  
         Returns:
@@ -262,10 +270,10 @@ class FotMobScraper:
         """
         self.setup_driver()
         return league_player_data.scrape_club_player_data(
-            self.driver,
-            club_url,
-            output_dir,
-            progress_callback
+            self.driver, club_url, output_dir,
+            skip_reserves=skip_reserves,
+            skip_zero_match=skip_zero_match,
+            progress_callback=progress_callback,
         )
     
     def get_league_team_stats(self, league_stats_url, season=None, progress_callback=None):

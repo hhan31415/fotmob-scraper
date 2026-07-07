@@ -182,6 +182,7 @@ def _parse_squad_data(next_data, team_id):
         "team_name": details.get("name"),
         "country": details.get("country"),
         "league_name": details.get("primaryLeagueName"),
+        "primary_league_id": details.get("primaryLeagueId"),
         "season": details.get("latestSeason"),
         "players": [],
     }

@@ -280,3 +280,46 @@ if __name__ == "__main__":
     output_path = sys.argv[2] if len(sys.argv) > 2 else re.sub(r"\.csv$", "_cleaned.csv", input_path)
 
     clean_player_csv(input_path, output_path)
+
+def to_sql_friendly_columns(df):
+    """
+    Renames all columns to SQL/code-friendly snake_case.
+
+    Examples:
+        "Possession - Duels won % (per90)" -> "possession_duels_won_pct_per90"
+        "All Competitions - Goals"          -> "all_competitions_goals"
+        "Shooting - xGOT (per90)"          -> "shooting_xgot_per90"
+        "market_value_usd"                  -> "market_value_usd"  (unchanged)
+
+    Applied at download time only -- does not affect on-disk CSVs.
+
+    Args:
+        df (pd.DataFrame)
+
+    Returns:
+        pd.DataFrame with renamed columns
+    """
+    import re
+
+    def slugify(col):
+        s = col.lower()
+        s = s.replace('%', 'pct')
+        s = s.replace('(per90)', 'per90')
+        s = s.replace(' - ', '_')
+        s = re.sub(r'[^a-z0-9_]', '_', s)
+        s = re.sub(r'_+', '_', s)
+        s = s.strip('_')
+        return s
+
+    new_cols = {}
+    seen = {}
+    for col in df.columns:
+        new = slugify(col)
+        if new in seen:
+            seen[new] += 1
+            new = f"{new}_{seen[new]}"
+        else:
+            seen[new] = 0
+        new_cols[col] = new
+
+    return df.rename(columns=new_cols)
