@@ -9,6 +9,11 @@ import platform
 
 
 def setup_driver():
+    import platform, shutil
+    print("platform.system():", platform.system())
+    print("platform.platform():", platform.platform())
+    print("chromium:", shutil.which("chromium"))
+    print("chromedriver:", shutil.which("chromedriver"))
     """
     Creates and configures a Chrome WebDriver instance.
 
@@ -29,6 +34,16 @@ def setup_driver():
     options.add_argument('--disable-extensions')
 
     if platform.system() == "Linux":
+        import shutil, subprocess
+        print("chromium path:", shutil.which("chromium"))
+        print("chromium-browser path:", shutil.which("chromium-browser"))  
+        print("chromedriver path:", shutil.which("chromedriver"))
+        try:
+            result = subprocess.run(["find", "/usr", "-name", "chrom*", "-type", "f"], 
+                                capture_output=True, text=True, timeout=5)
+            print("found chrom* files:", result.stdout)
+        except Exception as e:
+            print("find error:", e)
         options.add_argument('--disable-setuid-sandbox')
         options.add_argument('--single-process')
         options.add_argument('--no-zygote')
