@@ -32,11 +32,14 @@ def setup_driver():
         options.add_argument('--disable-setuid-sandbox')
         options.add_argument('--single-process')
         options.add_argument('--no-zygote')
-        # Try chromium-browser first (Ubuntu), fall back to chromium
+
         import shutil
-        chromium_path = shutil.which("chromium-browser") or shutil.which("chromium") or "/usr/bin/chromium-browser"
-        chromedriver_path = shutil.which("chromedriver") or "/usr/bin/chromedriver"
-    
+        chromium_path = (shutil.which("chromium") or 
+                        shutil.which("chromium-browser") or 
+                        "/usr/bin/chromium")
+        chromedriver_path = (shutil.which("chromedriver") or 
+                            "/usr/bin/chromedriver")
+
         options.binary_location = chromium_path
         service = Service(chromedriver_path)
     else:
