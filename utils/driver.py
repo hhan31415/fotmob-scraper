@@ -6,22 +6,15 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 from webdriver_manager.chrome import ChromeDriverManager
 from utils import config
 import platform
+import shutil
 
 
 def setup_driver():
-    import platform, shutil
-    print("platform.system():", platform.system())
-    print("platform.platform():", platform.platform())
-    print("chromium:", shutil.which("chromium"))
-    print("chromedriver:", shutil.which("chromedriver"))
     """
     Creates and configures a Chrome WebDriver instance.
 
-    Sets a 30-second page load timeout (rather than relying on the default,
-    which can be 120+ seconds depending on environment) so that a hung or
-    unresponsive page fails fast instead of blocking the scraper for minutes
-    per occurrence -- important when scraping hundreds of player pages back
-    to back, where an occasional dead request is expected.
+    Sets a 30-second page load timeout so that a hung or unresponsive page
+    fails fast instead of blocking the scraper for minutes per occurrence.
 
     Returns:
         webdriver.Chrome: Configured Chrome WebDriver instance
@@ -34,30 +27,21 @@ def setup_driver():
     options.add_argument('--disable-extensions')
 
     if platform.system() == "Linux":
-        import shutil, subprocess
-        print("chromium path:", shutil.which("chromium"))
-        print("chromium-browser path:", shutil.which("chromium-browser"))  
-        print("chromedriver path:", shutil.which("chromedriver"))
-        try:
-            result = subprocess.run(["find", "/usr", "-name", "chrom*", "-type", "f"], 
-                                capture_output=True, text=True, timeout=5)
-            print("found chrom* files:", result.stdout)
-        except Exception as e:
-            print("find error:", e)
+        # Streamlit Cloud / Linux: use system-installed Chromium
         options.add_argument('--disable-setuid-sandbox')
         options.add_argument('--single-process')
         options.add_argument('--no-zygote')
 
-        import shutil
-        chromium_path = (shutil.which("chromium") or 
-                        shutil.which("chromium-browser") or 
-                        "/usr/bin/chromium")
-        chromedriver_path = (shutil.which("chromedriver") or 
-                            "/usr/bin/chromedriver")
+        chromium_path = (shutil.which("chromium") or
+                         shutil.which("chromium-browser") or
+                         "/usr/bin/chromium")
+        chromedriver_path = (shutil.which("chromedriver") or
+                             "/usr/bin/chromedriver")
 
         options.binary_location = chromium_path
         service = Service(chromedriver_path)
     else:
+        # Local Windows/Mac: webdriver_manager handles driver download
         service = Service(ChromeDriverManager().install())
 
     driver = webdriver.Chrome(service=service, options=options)
@@ -69,13 +53,9 @@ def ensure_driver_alive(driver):
     """
     Checks if the driver is still alive and recreates it if necessary.
 
-    Checking driver.current_url alone is not always a reliable signal --
-    a renderer process can be locked up enough to fail on the next
-    driver.get() while still answering trivial property reads like
-    current_url successfully. Instead, this does a real (cheap) navigation
-    to about:blank, which exercises the same code path that was observed
-    hanging on real player pages, so a broken driver is reliably detected
-    and replaced here rather than failing again on the next real page load.
+    Uses driver.get("about:blank") as the health check rather than
+    driver.current_url, since a locked renderer can still answer property
+    reads while failing on the next real page load.
 
     Args:
         driver: WebDriver instance to check
@@ -92,7 +72,7 @@ def ensure_driver_alive(driver):
         try:
             driver.quit()
         except Exception:
-            pass  # driver may already be dead; nothing to clean up
+            pass
         return setup_driver()
 
 
