@@ -162,6 +162,11 @@ def _extract_stat_sections(driver, stats_data):
         
         for item in items:
             try:
+                # Skip possession row -- already handled by _extract_possession
+                # and misidentified as a section header due to its different class
+                item_class = item.get_attribute("class") or ""
+                if "PossessionRow" in item_class:
+                    continue
                 # Check if this item is a section header
                 is_header = _is_section_header(item)
                 
@@ -219,9 +224,10 @@ def _parse_stat_row(item):
     lines = [l.strip() for l in text.split('\n') if l.strip()]
     
     if len(lines) >= 3:
-        # Format: HomeValue \n StatName \n AwayValue
-        stat_name = lines[1]
-        home_val = lines[0]
+        # Format: StatName \n HomeValue \n AwayValue
+        # (confirmed from live DOM inspection of FotMob match stats page)
+        stat_name = lines[0]
+        home_val = lines[1]
         away_val = lines[2]
         return stat_name, home_val, away_val
     
