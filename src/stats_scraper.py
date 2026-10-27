@@ -70,44 +70,46 @@ def scrape_match_stats(driver, match_url, progress_callback=None):
         traceback.print_exc()
         return {}
 
-
 def _click_stats_tab(driver, wait):
     """
     Clicks on the Stats tab to load statistics.
-    
-    Args:
-        driver: WebDriver instance
-        wait: WebDriverWait instance
+
+    Tries several selectors, from most to least specific. On failure, prints
+    the text of every nav/tab element found so the actual label can be
+    identified if FotMob changes its DOM again.
     """
-    """
-    Tried out different ways to click the stats button, the last one worked the best
-    STATS_SELECTORS = [
-        # Most likely: an anchor tag with exact text "Stats"
-        (By.XPATH, "//a[normalize-space(text())='Stats']"),
-        # Tab role (ARIA)
-        (By.XPATH, "//*[@role='tab' and normalize-space(text())='Stats']"),
-        # List item containing "Stats"
-        (By.XPATH, "//li[normalize-space(text())='Stats']"),
-        # Any element with exact text, scoped to a nav/tab bar
-        (By.XPATH, "//nav//*[normalize-space(text())='Stats']"),
-    ]
-    """
-    STATS_SELECTORS = [
-        (By.XPATH, "//nav//*[normalize-space(text())='Stats']"),
+    selectors = [
+        # Direct text match (original selector)
+        "//nav//*[normalize-space(text())='Stats']",
+        # Full text of the element (handles nested spans)
+        "//nav//*[self::a or self::button or self::span][normalize-space(.)='Stats']",
+        # ARIA tab roles anywhere on the page
+        "//*[@role='tab'][normalize-space(.)='Stats']",
+        # Any link or button anywhere with exact text Stats
+        "//*[self::a or self::button][normalize-space(.)='Stats']",
     ]
 
-    for by, selector in STATS_SELECTORS:
+    for selector in selectors:
         try:
-            el = wait.until(EC.element_to_be_clickable((by, selector)))
+            el = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
             driver.execute_script("arguments[0].click();", el)
-            time.sleep(3)
+            time.sleep(3)  # give the stats panel time to render
             print(f"Stats tab clicked with: {selector}")
             return
         except Exception:
             continue
 
-    raise RuntimeError("Stats tab not found — FotMob may have changed its DOM structure")
+    # Debug output: show what tab-like elements actually exist
+    try:
+        candidates = driver.find_elements(
+            By.XPATH, "//nav//a | //nav//button | //*[@role='tab']"
+        )
+        labels = [c.text.strip() for c in candidates if c.text.strip()]
+        print(f"Stats tab not found. Tab-like elements on page: {labels[:30]}")
+    except Exception:
+        pass
 
+    raise RuntimeError("Stats tab not found — FotMob may have changed its DOM structure")
 
 def _extract_possession(driver, stats_data):
     """
@@ -118,7 +120,7 @@ def _extract_possession(driver, stats_data):
         stats_data (dict): Dictionary to update with possession data
     """
     try:
-        possession_div = driver.find_element(By.CSS_SELECTOR, "div.css-1xzakdb-PossessionDiv")
+        possession_div = driver.find_element(By.CSS_SELECTOR, "[class*='PossessionDiv']")
         possession_spans = possession_div.find_elements(By.TAG_NAME, "span")
         
         if len(possession_spans) >= 2:
@@ -142,8 +144,24 @@ def _extract_stat_sections(driver, stats_data):
         driver: WebDriver instance
         stats_data (dict): Dictionary to update with stat sections
     """
-    stat_containers = driver.find_elements(By.CSS_SELECTOR, "ul.css-1pxkecz-StatGroupContainer")
+     # Match on the stable part of the class name, not the hashed prefix,
+    # and wait for the stats panel to actually render after the tab click
+    selector = "[class*='StatGroupContainer']"
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+        )
+    except Exception:
+        pass
+
+    stat_containers = driver.find_elements(By.CSS_SELECTOR, selector)
     print(f"Found {len(stat_containers)} stat containers")
+
+    if not stat_containers:
+        # Debug: show which stat-related classes exist on the page
+        found = driver.find_elements(By.CSS_SELECTOR, "[class*='Stat']")
+        classes = {el.get_attribute("class") for el in found[:30]}
+        print(f"No containers found. Stat-like classes on page: {classes}")
     
     for container in stat_containers:
         # Default section name
