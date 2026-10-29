@@ -3,7 +3,12 @@
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import StaleElementReferenceException
 import time
+
+STATS_CONTAINER_SELECTOR = "[class*='StatGroupContainer']"
+# The Facts tab also renders a StatGroupContainer, so check the tab state instead
+STATS_TAB_SELECTED_XPATH = "//*[@role='tab'][@aria-selected='true'][normalize-space(.)='Stats']"
 
 
 def scrape_match_stats(driver, match_url, progress_callback=None):
@@ -19,39 +24,40 @@ def scrape_match_stats(driver, match_url, progress_callback=None):
         dict: Dictionary of stats organized by section
     """
     stats_data = {}
-    
+
     try:
-        print(f"Navigating to match URL: {match_url}")
-        driver.get(match_url)
-        
+        # The ":tab=stats" fragment opens the stats panel directly, no click needed
+        stats_url = _stats_tab_url(match_url)
+        print(f"Navigating to match URL: {stats_url}")
+        driver.get(stats_url)
+
         if progress_callback:
             progress_callback(20, "Loading match page...")
-        
+
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-        time.sleep(2)
-        
+
         if progress_callback:
             progress_callback(40, "Opening stats tab...")
-        
-        # Click on Stats tab
-        _click_stats_tab(driver, wait)
 
-        # Scroll to load all content
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(2)
-        driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(1)
-        
+        # Fall back to clicking the Stats tab if the fragment didn't open it
+        if not _wait_for_stats(driver, wait):
+            _click_stats_tab(driver, wait)
+            _wait_for_stats(driver, wait)
+
         if progress_callback:
             progress_callback(60, "Parsing stats data...")
         
-        # Extract ball possession
-        _extract_possession(driver, stats_data)
-        
-        # Extract all stat sections
-        _extract_stat_sections(driver, stats_data)
-        
+        # The panel can re-render right after it appears; retry on stale elements
+        for attempt in range(3):
+            stats_data = {}
+            try:
+                _extract_possession(driver, stats_data)
+                _extract_stat_sections(driver, stats_data)
+                break
+            except StaleElementReferenceException:
+                print(f"Stats panel re-rendered, retrying (attempt {attempt + 1})")
+                time.sleep(1)
+
         # Clean up empty sections
         stats_data = {k: v for k, v in stats_data.items() if v}
         
@@ -70,34 +76,51 @@ def scrape_match_stats(driver, match_url, progress_callback=None):
         traceback.print_exc()
         return {}
 
+def _stats_tab_url(match_url):
+    """
+    Appends ":tab=stats" to the match ID fragment (e.g. "#4813374:tab=stats").
+
+    Returns the URL unchanged if it has no fragment or already names a tab.
+    """
+    if "#" not in match_url or ":tab=" in match_url:
+        return match_url
+    return f"{match_url}:tab=stats"
+
+
+def _wait_for_stats(driver, wait):
+    """Waits for the Stats tab to be selected and its panel to render. Returns True if it did."""
+    try:
+        wait.until(EC.presence_of_element_located((By.XPATH, STATS_TAB_SELECTED_XPATH)))
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, STATS_CONTAINER_SELECTOR)))
+        return True
+    except Exception:
+        return False
+
+
 def _click_stats_tab(driver, wait):
     """
     Clicks on the Stats tab to load statistics.
 
-    Tries several selectors, from most to least specific. On failure, prints
-    the text of every nav/tab element found so the actual label can be
-    identified if FotMob changes its DOM again.
+    Uses one XPath union so a single wait catches whichever selector matches
+    first. On failure, prints the text of every nav/tab element found so the
+    actual label can be identified if FotMob changes its DOM again.
     """
-    selectors = [
-        # Direct text match (original selector)
-        "//nav//*[normalize-space(text())='Stats']",
-        # Full text of the element (handles nested spans)
-        "//nav//*[self::a or self::button or self::span][normalize-space(.)='Stats']",
-        # ARIA tab roles anywhere on the page
-        "//*[@role='tab'][normalize-space(.)='Stats']",
+    selector = (
+        # ARIA tab roles anywhere on the page (current FotMob DOM)
+        "//*[@role='tab'][normalize-space(.)='Stats']"
+        # Full text of a nav element (handles nested spans)
+        " | //nav//*[self::a or self::button or self::span][normalize-space(.)='Stats']"
         # Any link or button anywhere with exact text Stats
-        "//*[self::a or self::button][normalize-space(.)='Stats']",
-    ]
+        " | //*[self::a or self::button][normalize-space(.)='Stats']"
+    )
 
-    for selector in selectors:
-        try:
-            el = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
-            driver.execute_script("arguments[0].click();", el)
-            time.sleep(3)  # give the stats panel time to render
-            print(f"Stats tab clicked with: {selector}")
-            return
-        except Exception:
-            continue
+    try:
+        el = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
+        driver.execute_script("arguments[0].click();", el)
+        print("Stats tab clicked")
+        return
+    except Exception:
+        pass
 
     # Debug output: show what tab-like elements actually exist
     try:
@@ -132,6 +155,8 @@ def _extract_possession(driver, stats_data):
             
             stats_data["Top stats"]["Ball possession"] = [home_possession, away_possession]
             print(f"Extracted Ball possession: {home_possession} | {away_possession}")
+    except StaleElementReferenceException:
+        raise
     except Exception as e:
         print(f"Could not extract Ball possession: {e}")
 
@@ -144,17 +169,9 @@ def _extract_stat_sections(driver, stats_data):
         driver: WebDriver instance
         stats_data (dict): Dictionary to update with stat sections
     """
-     # Match on the stable part of the class name, not the hashed prefix,
-    # and wait for the stats panel to actually render after the tab click
-    selector = "[class*='StatGroupContainer']"
-    try:
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-        )
-    except Exception:
-        pass
-
-    stat_containers = driver.find_elements(By.CSS_SELECTOR, selector)
+    # Match on the stable part of the class name, not the hashed prefix.
+    # scrape_match_stats has already waited for the panel to render.
+    stat_containers = driver.find_elements(By.CSS_SELECTOR, STATS_CONTAINER_SELECTOR)
     print(f"Found {len(stat_containers)} stat containers")
 
     if not stat_containers:
@@ -172,6 +189,8 @@ def _extract_stat_sections(driver, stats_data):
             header = container.find_element(By.CSS_SELECTOR, "header h2")
             if header:
                 current_section = header.text.strip()
+        except StaleElementReferenceException:
+            raise
         except:
             pass
         
@@ -205,7 +224,9 @@ def _extract_stat_sections(driver, stats_data):
                         stats_data[current_section] = {}
                     
                     stats_data[current_section][stat_name] = [home_val, away_val]
-                    
+
+            except StaleElementReferenceException:
+                raise
             except Exception as e:
                 continue
 

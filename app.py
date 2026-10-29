@@ -267,13 +267,11 @@ with tab_matches:
                     st.warning("Detailed stats are only available for finished matches (FT status).")
                 else:
                     try:
-                        stats_scraper_inst = FotMobScraper()
                         stats = run_scraper_with_progress(
-                            stats_scraper_inst.get_match_stats,
+                            st.session_state.scraper.get_match_stats,
                             selected_match['url'],
                             progress_divisor=100
                         )
-                        stats_scraper_inst.close()
 
                         if stats:
                             st.success("Stats loaded successfully!")
