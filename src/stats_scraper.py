@@ -1,273 +1,140 @@
-"""Match statistics scraping functionality for FotMob."""
+"""Match statistics scraping functionality for FotMob.
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import StaleElementReferenceException
-import time
+Reads the match page's __NEXT_DATA__ JSON (no tab clicking needed):
+    props.pageProps.general.matchId
+    props.pageProps.header.teams[] -> {name, id, score, fifaRank}
+        fifaRank is the team's FIFA ranking at the time of the match
+        (national teams only; None for clubs)
+    props.pageProps.content.stats.Periods -> {All, FirstHalf, SecondHalf,
+        FirstExtraHalf, SecondExtraHalf}
+        each -> stats[] sections {title, key, stats[]}
+        each stat -> {title, key, stats: [home_display, away_display],
+                      rawStats: [{value, total?}, {value, total?}], format, type}
+        type "title" rows are section headers, not stats.
 
-STATS_CONTAINER_SELECTOR = "[class*='StatGroupContainer']"
-# The Facts tab also renders a StatGroupContainer, so check the tab state instead
-STATS_TAB_SELECTED_XPATH = "//*[@role='tab'][@aria-selected='true'][normalize-space(.)='Stats']"
+Matches must be requested by ID (https://www.fotmob.com/match/<id>): the
+slug URL without its "#<id>" fragment returns the pairing's latest match.
+"""
+
+import re
+from .next_data import fetch_page_props
+
+# FotMob period key -> label used in the app and in CSV column prefixes.
+# "All" includes extra time, so extra-time halves are kept for matches that
+# have them (they're missing from regular-time matches).
+PERIODS = [
+    ("All", "All"),
+    ("FirstHalf", "1st half"),
+    ("SecondHalf", "2nd half"),
+    ("FirstExtraHalf", "Extra time 1st half"),
+    ("SecondExtraHalf", "Extra time 2nd half"),
+]
 
 
 def scrape_match_stats(driver, match_url, progress_callback=None):
     """
     Scrapes detailed statistics for a specific match.
-    
+
     Args:
-        driver: WebDriver instance
-        match_url (str): URL of the match page
+        driver: WebDriver instance (fallback if requests is blocked)
+        match_url (str): URL of the match page, e.g.
+            "https://www.fotmob.com/matches/liverpool-vs-afc-bournemouth/2he69q#4813374"
         progress_callback (callable, optional): Progress callback function
-        
+
     Returns:
-        dict: Dictionary of stats organized by section
+        dict: {
+            "match_id": str,
+            "fifa_rank": [home, away] (None for clubs),
+            "periods": {"All" | "1st half" | "2nd half" | "Extra time ..." (if played):
+                {section: {stat: {"display": [h, a], "value": [h, a],
+                                  "total": [h, a] or None, "format": str}}}}
+        }
+        or {} if the match can't be read or has no stats.
     """
-    stats_data = {}
+    match_id = _match_id(match_url)
+    url = f"https://www.fotmob.com/match/{match_id}" if match_id else match_url
+
+    if progress_callback:
+        progress_callback(20, "Loading match page...")
+
+    page_props = fetch_page_props(url, driver)
+    if not page_props:
+        print(f"Could not read match page: {url}")
+        return {}
 
     try:
-        # The ":tab=stats" fragment opens the stats panel directly, no click needed
-        stats_url = _stats_tab_url(match_url)
-        print(f"Navigating to match URL: {stats_url}")
-        driver.get(stats_url)
-
-        if progress_callback:
-            progress_callback(20, "Loading match page...")
-
-        wait = WebDriverWait(driver, 10)
-
-        if progress_callback:
-            progress_callback(40, "Opening stats tab...")
-
-        # Fall back to clicking the Stats tab if the fragment didn't open it
-        if not _wait_for_stats(driver, wait):
-            _click_stats_tab(driver, wait)
-            _wait_for_stats(driver, wait)
+        found_id = str((page_props.get("general") or {}).get("matchId"))
+        if match_id and found_id != match_id:
+            print(f"Warning: asked for match {match_id}, page returned {found_id}")
 
         if progress_callback:
             progress_callback(60, "Parsing stats data...")
-        
-        # The panel can re-render right after it appears; retry on stale elements
-        for attempt in range(3):
-            stats_data = {}
-            try:
-                _extract_possession(driver, stats_data)
-                _extract_stat_sections(driver, stats_data)
-                break
-            except StaleElementReferenceException:
-                print(f"Stats panel re-rendered, retrying (attempt {attempt + 1})")
-                time.sleep(1)
 
-        # Clean up empty sections
-        stats_data = {k: v for k, v in stats_data.items() if v}
-        
+        teams = (page_props.get("header") or {}).get("teams") or [{}, {}]
+        periods_raw = ((page_props.get("content") or {}).get("stats") or {}).get("Periods") or {}
+
+        periods = {}
+        for key, label in PERIODS:
+            sections = _parse_period(periods_raw.get(key))
+            if sections:
+                periods[label] = sections
+
         if progress_callback:
             progress_callback(100, "Finished!")
-        
-        print(f"Extracted {len(stats_data)} sections with stats")
-        for section, stats in stats_data.items():
-            print(f"  {section}: {len(stats)} stats")
-                    
-        return stats_data
-        
+
+        print(f"Extracted {len(periods)} periods for match {found_id}")
+        for label, sections in periods.items():
+            print(f"  {label}: {sum(len(s) for s in sections.values())} stats in {len(sections)} sections")
+
+        return {
+            "match_id": found_id,
+            "fifa_rank": [t.get("fifaRank") for t in teams[:2]],
+            "periods": periods,
+        }
+
     except Exception as e:
-        print(f"Error scraping match stats: {e}")
+        print(f"Error parsing match stats: {e}")
         import traceback
         traceback.print_exc()
         return {}
 
-def _stats_tab_url(match_url):
+
+def _match_id(match_url):
+    """Pulls the match ID from "...#4813374" or ".../match/4813374"."""
+    found = re.search(r"#(\d+)", match_url) or re.search(r"/match/(\d+)", match_url)
+    return found.group(1) if found else None
+
+
+def _parse_period(period):
     """
-    Appends ":tab=stats" to the match ID fragment (e.g. "#4813374:tab=stats").
+    Parses one period's sections.
 
-    Returns the URL unchanged if it has no fragment or already names a tab.
+    Returns:
+        dict: {section_title: {stat_title: {"display", "value", "total", "format"}}}
     """
-    if "#" not in match_url or ":tab=" in match_url:
-        return match_url
-    return f"{match_url}:tab=stats"
-
-
-def _wait_for_stats(driver, wait):
-    """Waits for the Stats tab to be selected and its panel to render. Returns True if it did."""
-    try:
-        wait.until(EC.presence_of_element_located((By.XPATH, STATS_TAB_SELECTED_XPATH)))
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, STATS_CONTAINER_SELECTOR)))
-        return True
-    except Exception:
-        return False
-
-
-def _click_stats_tab(driver, wait):
-    """
-    Clicks on the Stats tab to load statistics.
-
-    Uses one XPath union so a single wait catches whichever selector matches
-    first. On failure, prints the text of every nav/tab element found so the
-    actual label can be identified if FotMob changes its DOM again.
-    """
-    selector = (
-        # ARIA tab roles anywhere on the page (current FotMob DOM)
-        "//*[@role='tab'][normalize-space(.)='Stats']"
-        # Full text of a nav element (handles nested spans)
-        " | //nav//*[self::a or self::button or self::span][normalize-space(.)='Stats']"
-        # Any link or button anywhere with exact text Stats
-        " | //*[self::a or self::button][normalize-space(.)='Stats']"
-    )
-
-    try:
-        el = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
-        driver.execute_script("arguments[0].click();", el)
-        print("Stats tab clicked")
-        return
-    except Exception:
-        pass
-
-    # Debug output: show what tab-like elements actually exist
-    try:
-        candidates = driver.find_elements(
-            By.XPATH, "//nav//a | //nav//button | //*[@role='tab']"
-        )
-        labels = [c.text.strip() for c in candidates if c.text.strip()]
-        print(f"Stats tab not found. Tab-like elements on page: {labels[:30]}")
-    except Exception:
-        pass
-
-    raise RuntimeError("Stats tab not found — FotMob may have changed its DOM structure")
-
-def _extract_possession(driver, stats_data):
-    """
-    Extracts ball possession data.
-    
-    Args:
-        driver: WebDriver instance
-        stats_data (dict): Dictionary to update with possession data
-    """
-    try:
-        possession_div = driver.find_element(By.CSS_SELECTOR, "[class*='PossessionDiv']")
-        possession_spans = possession_div.find_elements(By.TAG_NAME, "span")
-        
-        if len(possession_spans) >= 2:
-            home_possession = possession_spans[0].text.strip()
-            away_possession = possession_spans[1].text.strip()
-            
-            if "Top stats" not in stats_data:
-                stats_data["Top stats"] = {}
-            
-            stats_data["Top stats"]["Ball possession"] = [home_possession, away_possession]
-            print(f"Extracted Ball possession: {home_possession} | {away_possession}")
-    except StaleElementReferenceException:
-        raise
-    except Exception as e:
-        print(f"Could not extract Ball possession: {e}")
-
-
-def _extract_stat_sections(driver, stats_data):
-    """
-    Extracts all stat sections from the page.
-    
-    Args:
-        driver: WebDriver instance
-        stats_data (dict): Dictionary to update with stat sections
-    """
-    # Match on the stable part of the class name, not the hashed prefix.
-    # scrape_match_stats has already waited for the panel to render.
-    stat_containers = driver.find_elements(By.CSS_SELECTOR, STATS_CONTAINER_SELECTOR)
-    print(f"Found {len(stat_containers)} stat containers")
-
-    if not stat_containers:
-        # Debug: show which stat-related classes exist on the page
-        found = driver.find_elements(By.CSS_SELECTOR, "[class*='Stat']")
-        classes = {el.get_attribute("class") for el in found[:30]}
-        print(f"No containers found. Stat-like classes on page: {classes}")
-    
-    for container in stat_containers:
-        # Default section name
-        current_section = "Top stats"
-        
-        # Check for explicit header
-        try:
-            header = container.find_element(By.CSS_SELECTOR, "header h2")
-            if header:
-                current_section = header.text.strip()
-        except StaleElementReferenceException:
-            raise
-        except:
-            pass
-        
-        # Iterate through all list items
-        items = container.find_elements(By.CSS_SELECTOR, "li")
-        
-        for item in items:
-            try:
-                # Skip possession row -- already handled by _extract_possession
-                # and misidentified as a section header due to its different class
-                item_class = item.get_attribute("class") or ""
-                if "PossessionRow" in item_class:
-                    continue
-                # Check if this item is a section header
-                is_header = _is_section_header(item)
-                
-                if is_header:
-                    new_section = item.text.strip()
-                    if new_section:
-                        current_section = new_section
-                        if current_section not in stats_data:
-                            stats_data[current_section] = {}
-                    continue
-                
-                # Parse stat row
-                stat_name, home_val, away_val = _parse_stat_row(item)
-                
-                if stat_name:
-                    # Ensure section exists
-                    if current_section not in stats_data:
-                        stats_data[current_section] = {}
-                    
-                    stats_data[current_section][stat_name] = [home_val, away_val]
-
-            except StaleElementReferenceException:
-                raise
-            except Exception as e:
+    sections = {}
+    for section in (period or {}).get("stats") or []:
+        stats = {}
+        for stat in section.get("stats") or []:
+            if stat.get("type") == "title":
                 continue
+            display = list(stat.get("stats") or [None, None])
+            raw = stat.get("rawStats") or [{}, {}]
+            values = [_raw_value(r, "value", d) for r, d in zip(raw, display)]
+            totals = [_raw_value(r, "total") for r in raw]
+            stats[stat.get("title")] = {
+                "display": display,
+                "value": values,
+                "total": totals if any(t is not None for t in totals) else None,
+                "format": stat.get("format"),
+            }
+        if stats:
+            sections[section.get("title")] = stats
+    return sections
 
 
-def _is_section_header(item):
-    """
-    Checks if a list item is a section header.
-    
-    Args:
-        item: Selenium WebElement
-        
-    Returns:
-        bool: True if item is a header, False otherwise
-    """
-    try:
-        item.find_element(By.CSS_SELECTOR, "[class*='StatBox'], [class*='StatValue']")
-        return False
-    except:
-        # No stat box found, likely a header
-        return bool(item.text.strip())
-
-
-def _parse_stat_row(item):
-    """
-    Parses a stat row to extract stat name and values.
-    
-    Args:
-        item: Selenium WebElement
-        
-    Returns:
-        tuple: (stat_name, home_value, away_value) or (None, None, None)
-    """
-    text = item.text.strip()
-    lines = [l.strip() for l in text.split('\n') if l.strip()]
-    
-    if len(lines) >= 3:
-        # Format: StatName \n HomeValue \n AwayValue
-        # (confirmed from live DOM inspection of FotMob match stats page)
-        stat_name = lines[0]
-        home_val = lines[1]
-        away_val = lines[2]
-        return stat_name, home_val, away_val
-    
-    return None, None, None
+def _raw_value(raw, field, fallback=None):
+    """Numeric rawStats field, falling back to the display value."""
+    if isinstance(raw, dict) and raw.get(field) is not None:
+        return raw[field]
+    return fallback

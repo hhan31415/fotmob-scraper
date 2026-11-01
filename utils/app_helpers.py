@@ -2,6 +2,7 @@
 
 import streamlit as st
 import pandas as pd
+import re
 import time
 
 
@@ -52,25 +53,27 @@ def prepare_dataframe(matches):
     df = pd.DataFrame(matches)
     
     # Check data format (Old: list of matches, New: list of team rows)
-    is_detailed_stats = "Team" in df.columns
+    is_detailed_stats = "team" in df.columns
     
     if is_detailed_stats:
-        # Add "No" column (1, 2, 3...)
-        df.insert(0, 'No', range(1, 1 + len(df)))
+        # Add "no" column (1, 2, 3...)
+        df.insert(0, 'no', range(1, 1 + len(df)))
         
-        # Fix Score column for Excel (prevent date conversion)
-        if 'Score' in df.columns:
-            df['Score'] = df['Score'].apply(
+        # Fix score column for Excel (prevent date conversion)
+        if 'score' in df.columns:
+            df['score'] = df['score'].apply(
                 lambda x: x.replace(' - ', ' v ') if isinstance(x, str) and ' - ' in x else x
             )
         
         # Reorder columns: Put key info first
-        priority_cols = ["No", "Date", "Match", "Team", "Side", "Score", "Goal scored", "Goal conceded", "points", "Status"]
-        other_cols = [c for c in df.columns if c not in priority_cols and c != "Url"]
+        priority_cols = ["no", "date", "round_name", "group", "match", "team", "side", "score",
+                         "goals_scored", "goals_conceded", "points", "status",
+                         "fifa_rank", "opponent_fifa_rank"]
+        other_cols = [c for c in df.columns if c not in priority_cols and c != "url"]
         
         final_cols = priority_cols + other_cols
         
-        # Ensure columns exist (just in case)
+        # Ensure columns exist (group / fifa_rank only exist for some competitions)
         final_cols = [c for c in final_cols if c in df.columns]
         
         return df, final_cols, True
@@ -80,7 +83,7 @@ def prepare_dataframe(matches):
         df.insert(0, 'No', range(1, 1 + len(df)))
         
         # Reorder columns (excluding URL for display)
-        base_cols = ["No", "date", "home", "score", "away", "status"]
+        base_cols = ["No", "date", "round_name", "home", "score", "away", "status"]
         
         # Ensure base columns exist
         for col in base_cols:
@@ -92,6 +95,7 @@ def prepare_dataframe(matches):
         # Rename base columns for display
         rename_map = {
             "date": "Date", 
+            "round_name": "Round",
             "home": "Home Team", 
             "score": "Score", 
             "away": "Away Team", 
@@ -102,15 +106,27 @@ def prepare_dataframe(matches):
         return df_display, list(df_display.columns), False
 
 
-def render_detailed_stats_table(df, final_cols, season):
+def stats_csv_filename(league_name, season):
+    """
+    CSV filename for match stats, e.g. ("Premier League", "2025/2026") ->
+    "premier_league_season_2025-2026_stats.csv".
+    """
+    league_slug = re.sub(r"[^a-z0-9]+", "_", (league_name or "fotmob").lower()).strip("_")
+    season_slug = re.sub(r"[^0-9A-Za-z-]+", "-", (season or "").replace("/", "-")).strip("-")
+    return f"{league_slug}_season_{season_slug}_stats.csv"
+
+
+def render_detailed_stats_table(df, final_cols, season, league_name=None):
     """
     Render detailed stats table with optional pagination and download.
-    
+
     Args:
         df (pd.DataFrame): The DataFrame to display
         final_cols (list): List of columns to display
-        season (str): Current season string (for filename)
+        season (str): Season of the scraped data (for filename)
+        league_name (str, optional): Competition name (for filename)
     """
+    file_name = stats_csv_filename(league_name, season)
     # Check if this is season data (more than 40 rows = more than 1 round worth of data)
     is_season_data = len(df) > 40
     
@@ -161,7 +177,7 @@ def render_detailed_stats_table(df, final_cols, season):
         st.download_button(
             label="📥 Download Full Season Data (CSV)",
             data=csv,
-            file_name=f"fotmob_season_{season.replace(' ', '_')}_stats.csv",
+            file_name=file_name,
             mime="text/csv",
             type="primary",
             width='stretch'
@@ -173,6 +189,16 @@ def render_detailed_stats_table(df, final_cols, season):
             width='stretch',
             hide_index=True,
             height=750
+        )
+
+        csv = df[final_cols].to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Download Data (CSV)",
+            data=csv,
+            file_name=file_name,
+            mime="text/csv",
+            type="primary",
+            width='stretch'
         )
 
 

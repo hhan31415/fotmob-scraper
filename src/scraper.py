@@ -24,24 +24,39 @@ class FotMobScraper:
         """Ensure the driver is alive, recreating if necessary."""
         self.driver = driver.ensure_driver_alive(self.driver)
     
+    def get_competition(self, league_URL, season=None):
+        """
+        Load a competition season's name, available seasons and full match list.
+
+        Args:
+            league_URL (str): FotMob fixtures URL
+            season (str, optional): e.g. "2025-2026" or "2026"; None = current
+
+        Returns:
+            dict: {name, season, seasons, matches}. See match_scraper.fetch_competition.
+        """
+        self.setup_driver()
+        return match_scraper.fetch_competition(self.driver, league_URL, season)
+
     #NEW Added league_URL to use for match_scraper.scape_matches()
     def get_matches(self, season, round_num, league_URL, progress_callback=None):
         """
-        Scrape match data for a specific season and round.
+        Scrape match data for one round or stage of a competition season.
         
         Args:
-            season (str): Season in format "YYYY-YYYY" (e.g., "2024-2025")
-            round_num (int): Round number (1-38)
+            season (str): Season, e.g. "2024-2025" or "2026"
+            round_num (str or int): Round key, e.g. "1", "1/8" (Round of 16), "final"
+            league_URL (str): FotMob fixtures URL
             progress_callback (callable, optional): Callback for progress updates
             
         Returns:
             list: List of match dictionaries with keys:
-                - home: Home team name
-                - away: Away team name
-                - score: Match score or time
-                - status: Match status (FT, Live, Upcoming, etc.)
+                - match_id, date, kickoff_utc, round, round_name, group
+                - home, away, home_id, away_id
+                - score: Match score ("" if not played)
+                - status: FT, AET, Pen, Live, Upcoming, Cancelled, ...
+                - finished: True once the match is over
                 - url: Match URL
-                - date: Match date
         """
         self.setup_driver()
         return match_scraper.scrape_matches(
@@ -60,14 +75,9 @@ class FotMobScraper:
             progress_callback (callable, optional): Callback for progress updates
             
         Returns:
-            dict: Dictionary of stats organized by section:
-                - Top stats: Ball possession, xG, shots, etc.
-                - Expected goals (xG): Detailed xG breakdown
-                - Shots: Shot statistics
-                - Passes: Passing statistics
-                - Discipline: Cards
-                - Defense: Defensive statistics
-                - Duels: Duel statistics
+            dict: {match_id, fifa_rank: [home, away], periods: {"All" | "1st half" |
+                "2nd half": {section: {stat: {display, value, total, format}}}}}.
+                See stats_scraper.scrape_match_stats.
         """
         self.setup_driver()
         return stats_scraper.scrape_match_stats(
@@ -78,135 +88,93 @@ class FotMobScraper:
 
     def get_matches_with_stats(self, season, round_num, league_URL, progress_callback=None):
         """
-        Scrape matches and their stats for a specific season and round.
+        Scrape matches and their stats for one round or stage.
         
         Args:
-            season (str): Season in format "YYYY-YYYY"
-            round_num (int): Round number
+            season (str): Season, e.g. "2025-2026" or "2026"
+            round_num (str or int): Round key, e.g. "1", "1/8", "final"
+            league_URL (str): FotMob fixtures URL
             progress_callback (callable, optional): Callback for progress updates
             
         Returns:
-            list: List of dictionaries, two per match (one for Home, one for Away)
+            list: List of dictionaries, two per match (one for home, one for away)
         """
-        from utils.scraper_helpers import create_team_rows
-        
-        # 1. Get all matches first
         if progress_callback:
             progress_callback(0, "Fetching match list...")
             
         matches = self.get_matches(season, round_num, league_URL)
-        
-        if not matches:
-            return []
-            
-        total_matches = len(matches)
-        results = []
-        
-        # 2. Iterate through each match and get stats
-        for i, match in enumerate(matches):
-            # Update progress
-            if progress_callback:
-                percent = int((i / total_matches) * 100)
-                progress_callback(percent, f"Scraping match {i+1}/{total_matches}: {match['home']} vs {match['away']}")
-            
-            # Create base rows for home and away using helper
-            home_row, away_row = create_team_rows(match, round_num)
-            
-            # Only scrape stats if match is finished
-            if match['status'] in ['FT', 'HT']:
-                try:
-                    stats = self.get_match_stats(match['url'])
-                    
-                    # Flatten stats into rows
-                    for section, section_stats in stats.items():
-                        for stat_name, values in section_stats.items():
-                            # values[0] is Home, values[1] is Away
-                            home_row[stat_name] = values[0]
-                            away_row[stat_name] = values[1]
-                            
-                except Exception as e:
-                    print(f"Failed to get stats for {match['home']} vs {match['away']}: {e}")
-            
-            results.append(home_row)
-            results.append(away_row)
-            
-        if progress_callback:
-            progress_callback(100, "Finished scraping all matches!")
-            
-        return results
+        return self._add_match_stats(matches, progress_callback)
 
-
-    def get_matches_season(self, season, league_URL, total_rounds=38, progress_callback=None):
+    def get_matches_season(self, season, league_URL, progress_callback=None):
         """
-        Scrape match list (no stats) for an entire season.
+        Scrape match list (no stats) for an entire competition season,
+        including group stages and knockout rounds.
 
         Args:
-            season (str): Season in format "YYYY-YYYY" or "YYYY"
-            league_URL (str): FotMob fixtures URL for the league
-            total_rounds (int): Number of rounds in this league's season
+            season (str): Season, e.g. "2025-2026" or "2026"
+            league_URL (str): FotMob fixtures URL for the competition
             progress_callback (callable, optional): Callback for progress updates
 
         Returns:
             list: List of match dictionaries (same shape as get_matches)
         """
-        all_results = []
+        self.setup_driver()
+        return match_scraper.scrape_all_matches(
+            self.driver, season, league_URL, progress_callback
+        )
 
-        for round_num in range(1, total_rounds + 1):
-            def round_progress(percent, text, r=round_num):
-                if progress_callback:
-                    overall = int(((r - 1) / total_rounds * 100) + (percent / total_rounds))
-                    progress_callback(overall, f"[Round {r}/{total_rounds}] {text}")
-
-            try:
-                round_results = self.get_matches(season, round_num, league_URL,
-                                                progress_callback=round_progress)
-                all_results.extend(round_results)
-            except Exception as e:
-                print(f"Error scraping Round {round_num}: {e}")
-                continue
-
-        if progress_callback:
-            progress_callback(100, "Finished scraping season!")
-
-        return all_results
-
-
-    def get_season_stats(self, season, league_URL, total_rounds=38, progress_callback=None):
+    def get_season_stats(self, season, league_URL, progress_callback=None):
         """
-        Scrape match data and stats for an entire season.
+        Scrape match data and stats for an entire competition season.
 
         Args:
-            season (str): Season in format "YYYY-YYYY" or "YYYY"
-            league_URL (str): FotMob fixtures URL for the league
-            total_rounds (int): Number of rounds in this league's season
+            season (str): Season, e.g. "2025-2026" or "2026"
+            league_URL (str): FotMob fixtures URL for the competition
             progress_callback (callable, optional): Callback for progress updates
 
         Returns:
-            list: List of dictionaries, two per match (one for Home, one for Away)
+            list: List of dictionaries, two per match (one for home, one for away)
         """
-        all_results = []
+        if progress_callback:
+            progress_callback(0, "Fetching match list...")
 
-        for round_num in range(1, total_rounds + 1):
+        matches = self.get_matches_season(season, league_URL)
+        return self._add_match_stats(matches, progress_callback)
+
+    def _add_match_stats(self, matches, progress_callback=None):
+        """
+        Builds home/away rows for each match and adds stats for finished ones.
+
+        Returns:
+            list: List of dictionaries, two per match (one for home, one for away)
+        """
+        from utils.scraper_helpers import create_team_rows, add_stats_to_rows
+
+        total_matches = len(matches)
+        results = []
+
+        for i, match in enumerate(matches):
             if progress_callback:
-                progress_callback(0, f"Starting Round {round_num}/{total_rounds}...")
+                percent = int((i / total_matches) * 100)
+                progress_callback(percent, f"Scraping match {i+1}/{total_matches}: {match['home']} vs {match['away']}")
 
-            def round_progress(percent, text, r=round_num):
-                if progress_callback:
-                    overall = int(((r - 1) / total_rounds * 100) + (percent / total_rounds))
-                    progress_callback(overall, f"[Round {r}/{total_rounds}] {text}")
+            home_row, away_row = create_team_rows(match)
 
-            try:
-                round_results = self.get_matches_with_stats(season, round_num, league_URL,
-                                                            progress_callback=round_progress)
-                all_results.extend(round_results)
-            except Exception as e:
-                print(f"Error scraping Round {round_num}: {e}")
-                continue
+            # Only scrape stats once the match is over (FT, AET, Pen)
+            if match['finished']:
+                try:
+                    stats = self.get_match_stats(match['url'])
+                    add_stats_to_rows(home_row, away_row, stats)
+                except Exception as e:
+                    print(f"Failed to get stats for {match['home']} vs {match['away']}: {e}")
+
+            results.append(home_row)
+            results.append(away_row)
 
         if progress_callback:
-            progress_callback(100, "Finished scraping season!")
+            progress_callback(100, "Finished scraping all matches!")
 
-        return all_results
+        return results
     
     
     def get_league_player_data(self, league_table_url, output_dir,

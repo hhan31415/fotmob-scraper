@@ -5,6 +5,7 @@ import re
 from src import FotMobScraper
 from src import team_stats_scraper
 from src.league_player_data import detect_url_type
+from src.match_scraper import list_rounds
 from utils.app_helpers import (
     run_scraper_with_progress,
     prepare_dataframe,
@@ -46,55 +47,42 @@ if 'player_data_summary' not in st.session_state:
 if "confirmed_heavy_scrape" not in st.session_state:
     st.session_state["confirmed_heavy_scrape"] = None
 
-# ── League selector (shared by both tabs) ─────────────────────────────────────
+# ── Competition selector (shared by all tabs) ────────────────────────────────
+# name -> (FotMob league ID, URL slug)
+COMPETITIONS = {
+    "Premier League": (47, "premier-league"),
+    "La Liga": (87, "laliga"),
+    "Bundesliga": (54, "bundesliga"),
+    "Serie A": (55, "serie"),
+    "Ligue 1": (53, "ligue-1"),
+    "MLS": (130, "mls"),
+    "USL Championship": (8972, "usl-championship"),
+    "Champions League": (42, "champions-league"),
+    "World Cup": (77, "world-cup"),
+    "EURO": (50, "euro"),
+    "Copa America": (44, "copa-america"),
+    "UEFA Nations League A": (9806, "uefa-nations-league-a"),
+    "Africa Cup of Nations": (289, "africa-cup-of-nations"),
+    "CONCACAF Gold Cup": (298, "gold-cup"),
+    "International Friendlies": (114, "friendlies"),
+}
+
 league = st.selectbox(
-    "League",
-    options=["Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1", "MLS", "USL Championship"],
-    help="Select a football league, or paste any FotMob URL in the relevant tab below"
+    "Competition",
+    options=list(COMPETITIONS),
+    help="Select a league or international competition, or paste any FotMob URL in the relevant tab below"
 )
 
-if league == "MLS":
-    league_URL = "https://www.fotmob.com/leagues/130/fixtures/mls"
-    league_years = 0
-    league_table_url = "https://www.fotmob.com/leagues/130/table/mls"
-    league_stats_url = "https://www.fotmob.com/leagues/130/stats/mls/teams"
-    league_rounds = 34
-elif league == "Premier League":
-    league_URL = "https://www.fotmob.com/leagues/47/fixtures/premier-league"
-    league_years = 1
-    league_table_url = "https://www.fotmob.com/leagues/47/table/premier-league"
-    league_stats_url = "https://www.fotmob.com/leagues/47/stats/premier-league/teams"
-    league_rounds = 38
-elif league == "La Liga":
-    league_URL = "https://www.fotmob.com/leagues/87/fixtures/laliga"
-    league_years = 1
-    league_table_url = "https://www.fotmob.com/leagues/87/table/laliga"
-    league_stats_url = "https://www.fotmob.com/leagues/87/stats/laliga/teams"
-    league_rounds = 38
-elif league == "Bundesliga":
-    league_URL = "https://www.fotmob.com/leagues/54/fixtures/bundesliga"
-    league_years = 1
-    league_table_url = "https://www.fotmob.com/leagues/54/table/bundesliga"
-    league_stats_url = "https://www.fotmob.com/leagues/54/stats/bundesliga/teams"
-    league_rounds = 34
-elif league == "Serie A":
-    league_URL = "https://www.fotmob.com/leagues/55/fixtures/serie"
-    league_years = 1
-    league_table_url = "https://www.fotmob.com/leagues/55/table/serie"
-    league_stats_url = "https://www.fotmob.com/leagues/55/stats/serie/teams"
-    league_rounds = 38
-elif league == "Ligue 1":
-    league_URL = "https://www.fotmob.com/leagues/53/fixtures/ligue-1"
-    league_years = 1
-    league_table_url = "https://www.fotmob.com/leagues/53/table/ligue-1"
-    league_stats_url = "https://www.fotmob.com/leagues/53/stats/ligue-1/teams"
-    league_rounds = 34
-elif league == "USL Championship":
-    league_URL = "https://www.fotmob.com/leagues/8972/fixtures/usl-championship"
-    league_years = 0
-    league_table_url = "https://www.fotmob.com/leagues/8972/table/usl-championship"
-    league_stats_url = "https://www.fotmob.com/leagues/8972/stats/usl-championship/teams"
-    league_rounds = 36
+league_id, league_slug = COMPETITIONS[league]
+league_URL = f"https://www.fotmob.com/leagues/{league_id}/fixtures/{league_slug}"
+league_table_url = f"https://www.fotmob.com/leagues/{league_id}/table/{league_slug}"
+league_stats_url = f"https://www.fotmob.com/leagues/{league_id}/stats/{league_slug}/teams"
+
+
+@st.cache_data(ttl=900, show_spinner="Loading competition...")
+def load_competition(fixtures_url, season=None):
+    """Season list + full match list for a competition (cached for 15 min)."""
+    return st.session_state.scraper.get_competition(fixtures_url, season)
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 tab_matches, tab_players, tab_team_stats = st.tabs(["Match Stats", "Player Stats", "Team Stats"])
@@ -118,42 +106,51 @@ with tab_matches:
         key="custom_match_url"
     )
 
-   # Resolve which league URL and rounds to actually use
+   # Resolve which league URL to actually use
     if custom_match_url.strip():
         url_type, normalized_match_url = detect_url_type(custom_match_url)
         if url_type == "league":
             active_league_URL = re.sub(
-                r'(?:https://www\.fotmob\.com)?/leagues/(\d+)/[^/]+/(.+)',
+                r'(?:https://www\.fotmob\.com)?/leagues/(\d+)/[^/]+/([^?#]+).*',
                 r'https://www.fotmob.com/leagues/\1/fixtures/\2',
                 normalized_match_url
             )
             st.caption(f"Using custom league URL: `{active_league_URL}`")
-            active_rounds = st.number_input(
-                "Number of rounds in this league",
-                min_value=1, max_value=99,
-                value=league_rounds,
-                help="Enter the total number of rounds for the custom league you pasted."
-            )
         else:
             active_league_URL = league_URL
-            active_rounds = league_rounds
             st.caption("URL not recognized as a league - using dropdown selection instead")
     else:
         active_league_URL = league_URL
-        active_rounds = league_rounds
 
-    # Season / round inputs
+    # Season / round inputs, read from the competition's fixtures page so
+    # knockout stages (Round of 16, Final, ...) and round counts come from FotMob
+    try:
+        competition = load_competition(active_league_URL)
+    except Exception as e:
+        competition = {"seasons": [], "season": None, "matches": []}
+        st.error(f"Could not load competition: {e}")
+
     col1, col2 = st.columns(2)
     with col1:
-        if league_years == 0:
-            season = st.text_input("Season (Year)", value="2026",
-                                   help="Format: YYYY (e.g., 2026)")
+        if competition["seasons"]:
+            season = st.selectbox("Season", competition["seasons"])
         else:
-            season = st.text_input("Season (Year-Year)", value="2025-2026",
-                                   help="Format: YYYY-YYYY (e.g., 2025-2026)")
+            season = st.text_input("Season", value=competition["season"] or "",
+                                   help="Format: YYYY-YYYY (e.g., 2025-2026) or YYYY (e.g., 2026)")
+    if season and season != competition["season"]:
+        try:
+            competition = load_competition(active_league_URL, season)
+        except Exception as e:
+            st.error(f"Could not load season {season}: {e}")
+    round_options = list_rounds(competition["matches"])
     with col2:
-        round_num = st.number_input("Round", min_value=1,
-                                    max_value=active_rounds, value=1)
+        if round_options:
+            round_labels = dict(round_options)
+            round_num = st.selectbox("Round / stage", list(round_labels),
+                                     format_func=lambda r: round_labels[r])
+        else:
+            round_num = None
+            st.selectbox("Round / stage", ["No matches found"], disabled=True)
 
     # Scrape buttons
     col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
@@ -182,6 +179,7 @@ with tab_matches:
                 )
                 if matches:
                     st.session_state.matches = matches
+                    st.session_state.matches_source = (competition["name"] or league, season)
                     st.success(f"Successfully scraped {len(matches)} matches!")
                 else:
                     st.warning("No matches found. Please check the season and round number.")
@@ -193,11 +191,12 @@ with tab_matches:
             with st.spinner("Scraping full season matches (this will take a while)..."):
                 matches = run_scraper_with_progress(
                     st.session_state.scraper.get_matches_season,
-                    season, active_league_URL, active_rounds,
+                    season, active_league_URL,
                     progress_divisor=100
                 )
                 if matches:
                     st.session_state.matches = matches
+                    st.session_state.matches_source = (competition["name"] or league, season)
                     st.success(f"Successfully scraped {len(matches)} matches for the entire season!")
                 else:
                     st.warning("No matches found. Please check the season.")
@@ -214,6 +213,7 @@ with tab_matches:
                 )
                 if matches:
                     st.session_state.matches = matches
+                    st.session_state.matches_source = (competition["name"] or league, season)
                     st.success(f"Successfully scraped {len(matches)} matches with stats!")
                 else:
                     st.warning("No matches found. Please check the season and round number.")
@@ -229,11 +229,12 @@ with tab_matches:
             with st.spinner("Scraping full season with stats (this will take a LONG time)..."):
                 matches = run_scraper_with_progress(
                     st.session_state.scraper.get_season_stats,
-                    season, active_league_URL, active_rounds,
+                    season, active_league_URL,
                     progress_divisor=100
                 )
                 if matches:
                     st.session_state.matches = matches
+                    st.session_state.matches_source = (competition["name"] or league, season)
                     st.success(f"Successfully scraped {len(matches)//2} matches for the entire season!")
                 else:
                     st.warning("No matches found. Please check the season.")
@@ -247,13 +248,14 @@ with tab_matches:
 
         if is_detailed_stats:
             st.success(f"Loaded data for {len(df)//2} matches ({len(df)} rows)")
-            render_detailed_stats_table(df, final_cols, season)
+            source_name, source_season = st.session_state.get("matches_source", (league, season))
+            render_detailed_stats_table(df, final_cols, source_season, source_name)
         else:
             render_simple_matches_table(df, final_cols)
 
             st.markdown("---")
             st.subheader("Match Statistics")
-            match_options = [f"{i+1}. {m['home']} vs {m['away']} ({m['status']})"
+            match_options = [f"{i+1}. {m['round_name']}: {m['home']} vs {m['away']} ({m['status']})"
                              for i, m in enumerate(matches)]
             selected_match_idx = st.selectbox(
                 "Select a match to view detailed stats:",
@@ -263,49 +265,65 @@ with tab_matches:
 
             if st.button("Get Match Stats", type="secondary"):
                 selected_match = matches[selected_match_idx]
-                if selected_match['status'] not in ['FT', 'HT']:
-                    st.warning("Detailed stats are only available for finished matches (FT status).")
+                if not selected_match['finished']:
+                    st.warning("Detailed stats are only available for finished matches (FT, AET or Pen).")
                 else:
                     try:
-                        stats = run_scraper_with_progress(
-                            st.session_state.scraper.get_match_stats,
-                            selected_match['url'],
-                            progress_divisor=100
+                        st.session_state.single_match_stats = (
+                            selected_match,
+                            run_scraper_with_progress(
+                                st.session_state.scraper.get_match_stats,
+                                selected_match['url'],
+                                progress_divisor=100
+                            ),
                         )
-
-                        if stats:
-                            st.success("Stats loaded successfully!")
-                            for section_name, section_stats in stats.items():
-                                with st.expander(f"{section_name}", expanded=True):
-                                    if section_stats:
-                                        stats_df = pd.DataFrame([
-                                            {
-                                                "Stat": stat_name,
-                                                selected_match['home']: values[0],
-                                                selected_match['away']: values[1]
-                                            }
-                                            for stat_name, values in section_stats.items()
-                                        ])
-                                        st.dataframe(stats_df, use_container_width=True,
-                                                     hide_index=True)
-                                    else:
-                                        st.info("No stats available for this section.")
-                        else:
-                            st.error("Could not retrieve stats.")
                     except Exception as e:
+                        st.session_state.single_match_stats = None
                         st.error(f"An error occurred while fetching stats: {e}")
+
+            # Kept in session state so switching the period doesn't refetch
+            single = st.session_state.get("single_match_stats")
+            if single and single[0]['url'] == matches[selected_match_idx]['url']:
+                selected_match, stats = single
+                if stats and stats.get("periods"):
+                    home_rank, away_rank = stats["fifa_rank"]
+                    if home_rank is not None or away_rank is not None:
+                        st.caption(f"FIFA ranking at match time: {selected_match['home']} {home_rank}, "
+                                   f"{selected_match['away']} {away_rank}")
+                    period = st.radio("Period", list(stats["periods"]), horizontal=True)
+                    for section_name, section_stats in stats["periods"][period].items():
+                        with st.expander(f"{section_name}", expanded=True):
+                            stats_df = pd.DataFrame([
+                                {
+                                    "Stat": stat_name,
+                                    selected_match['home']: str(stat["display"][0]),
+                                    selected_match['away']: str(stat["display"][1])
+                                }
+                                for stat_name, stat in section_stats.items()
+                            ])
+                            st.dataframe(stats_df, use_container_width=True,
+                                         hide_index=True)
+                else:
+                    st.error("Could not retrieve stats (FotMob may not have stats for this match).")
 
     # Instructions
     with st.expander("How to use"):
         st.markdown("""
-        1. Select a league from the dropdown above, or paste a custom FotMob league URL.
-        2. Enter the season and round number.
+        1. Select a league or international competition from the dropdown above, or paste a custom FotMob league URL.
+        2. Pick the season and round / stage. Knockout stages (Round of 16, Final, ...) are listed as their own
+           stages; competitions without rounds (e.g. friendlies) are grouped by month.
         3. Click one of the four scrape buttons:
-           - **Matches Only (Round)**: match list for one round, no stats
-           - **Matches Only (Season)**: match list for all rounds, no stats
-           - **Matches & Stats (Round)**: match list + detailed stats for one round
-           - **Matches & Stats (Season)**: match list + detailed stats for entire season *(very slow)*
-        4. For individual match stats, select a finished match (FT) from the dropdown and click **Get Match Stats**.
+           - **Matches Only (Round)**: match list for the selected round / stage, no stats
+           - **Matches Only (Season)**: every match of the season, no stats
+           - **Matches & Stats (Round)**: match list + detailed stats for the selected round / stage
+           - **Matches & Stats (Season)**: match list + detailed stats for every match *(slow)*
+        4. For individual match stats, select a finished match from the dropdown and click **Get Match Stats**.
+
+        Stat columns are snake_case. Full-match stats have no prefix (e.g. `total_shots`, which includes extra time);
+        half stats are prefixed `first_half_` / `second_half_` (plus `et_first_half_` / `et_second_half_` for matches
+        that went to extra time). Stats with an attempted count also get a `_total` column
+        (e.g. `accurate_passes` / `accurate_passes_total`).
+        National team matches include `fifa_rank` and `opponent_fifa_rank` at the time of the match.
         """
         )
 

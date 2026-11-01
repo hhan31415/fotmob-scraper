@@ -281,6 +281,17 @@ if __name__ == "__main__":
 
     clean_player_csv(input_path, output_path)
 
+def slugify(col):
+    """Converts one column/stat name to snake_case, e.g. "Expected goals (xG)" -> "expected_goals_xg"."""
+    s = col.lower()
+    s = s.replace('%', 'pct')
+    s = s.replace('(per90)', 'per90')
+    s = s.replace(' - ', '_')
+    s = re.sub(r'[^a-z0-9_]', '_', s)
+    s = re.sub(r'_+', '_', s)
+    s = s.strip('_')
+    return s
+
 def to_sql_friendly_columns(df):
     """
     Renames all columns to SQL/code-friendly snake_case.
@@ -299,18 +310,6 @@ def to_sql_friendly_columns(df):
     Returns:
         pd.DataFrame with renamed columns
     """
-    import re
-
-    def slugify(col):
-        s = col.lower()
-        s = s.replace('%', 'pct')
-        s = s.replace('(per90)', 'per90')
-        s = s.replace(' - ', '_')
-        s = re.sub(r'[^a-z0-9_]', '_', s)
-        s = re.sub(r'_+', '_', s)
-        s = s.strip('_')
-        return s
-
     new_cols = {}
     seen = {}
     for col in df.columns:
