@@ -47,7 +47,8 @@ def scrape_match_stats(driver, match_url, progress_callback=None):
             "fifa_rank": [home, away] (None for clubs),
             "periods": {"All" | "1st half" | "2nd half" | "Extra time ..." (if played):
                 {section: {stat: {"display": [h, a], "value": [h, a],
-                                  "total": [h, a] or None, "format": str}}}}
+                                  "total": [h, a] or None, "format": str}}}},
+            "xgot_non_penalty": {period label: [h, a]} (empty without a shotmap)
         }
         or {} if the match can't be read or has no stats.
     """
@@ -86,10 +87,13 @@ def scrape_match_stats(driver, match_url, progress_callback=None):
         for label, sections in periods.items():
             print(f"  {label}: {sum(len(s) for s in sections.values())} stats in {len(sections)} sections")
 
+        shots = ((page_props.get("content") or {}).get("shotmap") or {}).get("shots") or []
+
         return {
             "match_id": found_id,
             "fifa_rank": [t.get("fifaRank") for t in teams[:2]],
             "periods": periods,
+            "xgot_non_penalty": _xgot_non_penalty(shots, teams[0].get("id"), periods),
         }
 
     except Exception as e:
@@ -131,6 +135,45 @@ def _parse_period(period):
         if stats:
             sections[section.get("title")] = stats
     return sections
+
+
+def _xgot_non_penalty(shots, home_team_id, periods):
+    """
+    Non-penalty xGOT per period: total xGOT minus the xGOT of penalty shots.
+
+    Uses content.shotmap.shots[] -> {teamId, period, situation, expectedGoalsOnTarget}.
+    Shot periods are FirstHalf / SecondHalf / FirstHalfExtra / SecondHalfExtra /
+    PenaltyShootout; shootout kicks are excluded (they're not in the xGOT stat).
+    Shots off target have no xGOT and count as 0. With the shootout excluded,
+    the shotmap's xGOT sums match the "xG on target (xGOT)" stat.
+
+    Returns:
+        dict: {period label: [home, away]} for the periods in `periods`,
+            or {} if the match has no shotmap.
+    """
+    if not shots:
+        return {}
+
+    shot_periods = {
+        "FirstHalf": "1st half",
+        "SecondHalf": "2nd half",
+        "FirstHalfExtra": "Extra time 1st half",
+        "SecondHalfExtra": "Extra time 2nd half",
+    }
+    totals = {label: [0.0, 0.0] for label in periods}
+    for shot in shots:
+        label = shot_periods.get(shot.get("period"))
+        if label is None:
+            continue  # penalty shootout
+        side = 0 if shot.get("teamId") == home_team_id else 1
+        xgot = shot.get("expectedGoalsOnTarget") or 0
+        if shot.get("situation") == "Penalty":
+            xgot = 0
+        for period in ("All", label):
+            if period in totals:
+                totals[period][side] += xgot
+
+    return {label: [round(h, 2), round(a, 2)] for label, (h, a) in totals.items()}
 
 
 def _raw_value(raw, field, fallback=None):

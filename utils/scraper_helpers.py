@@ -126,7 +126,8 @@ def add_stats_to_rows(home_row, away_row, match_stats):
     "second_half_accurate_passes" (plus
     "..._total" for stats with an attempted count, e.g. 763 of 853 passes).
     Values are numeric. A stat listed in several sections (e.g. "Total shots"
-    in Top stats and Shots) appears once.
+    in Top stats and Shots) appears once. "xgot_non_penalty" is derived
+    from the shotmap (see stats_scraper._xgot_non_penalty).
 
     Args:
         home_row, away_row (dict): Rows from create_team_rows, updated in place
@@ -150,6 +151,12 @@ def add_stats_to_rows(home_row, away_row, match_stats):
                 home_row[col], away_row[col] = stat["value"][:2]
                 if stat.get("total"):
                     home_row[f"{col}_total"], away_row[f"{col}_total"] = stat["total"][:2]
+
+    # Non-penalty xGOT, from the shotmap (not a FotMob stat)
+    for period, values in (match_stats.get("xgot_non_penalty") or {}).items():
+        prefix = PERIOD_PREFIXES.get(period, slugify(period))
+        col = f"{prefix}_xgot_non_penalty" if prefix else "xgot_non_penalty"
+        home_row[col], away_row[col] = values[:2]
 
 
 def stat_column_name(title, stat_format=None):
