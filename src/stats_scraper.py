@@ -48,7 +48,8 @@ def scrape_match_stats(driver, match_url, progress_callback=None):
             "periods": {"All" | "1st half" | "2nd half" | "Extra time ..." (if played):
                 {section: {stat: {"display": [h, a], "value": [h, a],
                                   "total": [h, a] or None, "format": str}}}},
-            "xgot_non_penalty": {period label: [h, a]} (empty without a shotmap)
+            "xgot_non_penalty": {period label: [h, a]} (empty without a shotmap),
+            "players": [per-player stats, see _parse_players]
         }
         or {} if the match can't be read or has no stats.
     """
@@ -94,6 +95,7 @@ def scrape_match_stats(driver, match_url, progress_callback=None):
             "fifa_rank": [t.get("fifaRank") for t in teams[:2]],
             "periods": periods,
             "xgot_non_penalty": _xgot_non_penalty(shots, teams[0].get("id"), periods),
+            "players": _parse_players(page_props, teams[0].get("id")),
         }
 
     except Exception as e:
@@ -174,6 +176,72 @@ def _xgot_non_penalty(shots, home_team_id, periods):
                 totals[period][side] += xgot
 
     return {label: [round(h, 2), round(a, 2)] for label, (h, a) in totals.items()}
+
+
+# lineup usualPlayingPositionId -> label
+USUAL_POSITIONS = {0: "GK", 1: "DF", 2: "MF", 3: "FW"}
+
+
+def _parse_players(page_props, home_team_id):
+    """
+    Parses per-player match stats (the stats in FotMob's player popup).
+
+    Uses content.playerStats {player_id: {name, id, teamId, isGoalkeeper,
+    shirtNumber, stats[] sections {title, stats: {title: {key, stat: {value,
+    total?, type}}}}, shotmap[]}} and content.lineup.{homeTeam,awayTeam}.
+    {starters, subs}[] for starter/sub, age, country and market value.
+    Player stats are full-match only (FotMob has no per-half player stats).
+    Players who didn't play (unused subs, 0 minutes) are skipped.
+
+    Returns:
+        list[dict]: {player_id, player, team_id, side, shirt_number,
+            is_goalkeeper, started, usual_position, age, country,
+            market_value, stats: {title: {"value", "total"}}, xgot_non_penalty}
+    """
+    content = page_props.get("content") or {}
+    player_stats = content.get("playerStats") or {}
+    lineup = content.get("lineup") or {}
+
+    lineup_info = {}
+    for team_key in ("homeTeam", "awayTeam"):
+        for group in ("starters", "subs"):
+            for p in (lineup.get(team_key) or {}).get(group) or []:
+                lineup_info[p.get("id")] = (group == "starters", p)
+
+    players = []
+    for p in player_stats.values():
+        stats = {}
+        for section in p.get("stats") or []:
+            for title, entry in (section.get("stats") or {}).items():
+                stat = (entry or {}).get("stat") or {}
+                if stat.get("type") == "boolean" or title in stats:
+                    continue  # "Shotmap" flag; stats repeated across sections
+                stats[title] = {"value": stat.get("value"), "total": stat.get("total")}
+
+        minutes = (stats.get("Minutes played") or {}).get("value")
+        if not minutes:
+            continue
+
+        started, info = lineup_info.get(p.get("id"), (None, {}))
+        shots = [s for s in p.get("shotmap") or [] if s.get("period") != "PenaltyShootout"]
+        players.append({
+            "player_id": p.get("id"),
+            "player": p.get("name"),
+            "team_id": p.get("teamId"),
+            "side": "home" if p.get("teamId") == home_team_id else "away",
+            "shirt_number": p.get("shirtNumber"),
+            "is_goalkeeper": bool(p.get("isGoalkeeper")),
+            "started": started,
+            "usual_position": USUAL_POSITIONS.get(info.get("usualPlayingPositionId")),
+            "age": info.get("age"),
+            "country": info.get("countryName"),
+            "market_value": info.get("marketValue"),
+            "stats": stats,
+            # Same rule as the team value: penalties and shootout kicks excluded
+            "xgot_non_penalty": round(sum(s.get("expectedGoalsOnTarget") or 0 for s in shots
+                                          if s.get("situation") != "Penalty"), 2),
+        })
+    return players
 
 
 def _raw_value(raw, field, fallback=None):

@@ -159,6 +159,69 @@ def add_stats_to_rows(home_row, away_row, match_stats):
         home_row[col], away_row[col] = values[:2]
 
 
+def create_player_rows(match, match_stats):
+    """
+    One row per player who played, with match info for joining to the team rows.
+
+    Stat columns are snake_case full-match values (e.g. "fotmob_rating",
+    "minutes_played", "expected_goals_xg"), plus "..._total" for stats with an
+    attempted count (e.g. "accurate_passes" / "accurate_passes_total") and
+    "xgot_non_penalty" from the player's shotmap.
+
+    Args:
+        match (dict): Match data dictionary from match_scraper
+        match_stats (dict): Result of stats_scraper.scrape_match_stats
+
+    Returns:
+        list[dict]
+    """
+    base_info = {
+        "match_id": match['match_id'],
+        "date": match['date'],
+        "round": match['round'],
+        "round_name": match['round_name'],
+    }
+    if match.get('group'):
+        base_info["group"] = match['group']
+    base_info["match"] = f"{match['home']} - {match['away']}"
+
+    sides = {
+        "home": (match['home'], match['home_id'], match['away'], match['away_id']),
+        "away": (match['away'], match['away_id'], match['home'], match['home_id']),
+    }
+
+    rows = []
+    for p in match_stats.get("players") or []:
+        team, team_id, opponent, opponent_id = sides[p["side"]]
+        row = base_info.copy()
+        row.update({
+            "team": team,
+            "team_id": team_id,
+            "side": p["side"],
+            "opponent": opponent,
+            "opponent_id": opponent_id,
+            "player_id": p["player_id"],
+            "player": p["player"],
+            "shirt_number": p["shirt_number"],
+            "usual_position": p["usual_position"],
+            "is_goalkeeper": p["is_goalkeeper"],
+            "started": p["started"],
+            "age": p["age"],
+            "country": p["country"],
+            "market_value": p["market_value"],
+        })
+        for title, stat in p["stats"].items():
+            col = stat_column_name(title)
+            if col in row:
+                continue
+            row[col] = stat["value"]
+            if stat.get("total") is not None:
+                row[f"{col}_total"] = stat["total"]
+        row["xgot_non_penalty"] = p["xgot_non_penalty"]
+        rows.append(row)
+    return rows
+
+
 def stat_column_name(title, stat_format=None):
     """Snake_case column name for a FotMob stat title, e.g. "Distance covered" -> "distance_covered_m"."""
     name = slugify(title)

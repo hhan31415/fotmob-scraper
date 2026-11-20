@@ -202,6 +202,35 @@ def render_detailed_stats_table(df, final_cols, season, league_name=None):
         )
 
 
+def render_player_stats_table(player_rows, season, league_name=None):
+    """
+    Render the per-player match stats table with its own CSV download.
+
+    Args:
+        player_rows (list[dict]): Rows from scraper_helpers.create_player_rows
+        season (str): Season of the scraped data (for filename)
+        league_name (str, optional): Competition name (for filename)
+    """
+    # Stats missing for some players make whole-number columns float (1.0);
+    # nullable ints keep them as 1 in the CSV
+    df = pd.DataFrame(player_rows).convert_dtypes()
+
+    st.markdown("---")
+    st.subheader("Player Stats")
+    st.caption(f"{len(df)} player rows from {df['match_id'].nunique()} matches "
+               "(players who played; full-match stats only)")
+    st.dataframe(df, width='stretch', hide_index=True, height=500)
+
+    st.download_button(
+        label="Download Player Data (CSV)",
+        data=df.to_csv(index=False).encode('utf-8'),
+        file_name=stats_csv_filename(league_name, season).replace("_stats.csv", "_player_stats.csv"),
+        mime="text/csv",
+        type="primary",
+        width='stretch'
+    )
+
+
 def render_simple_matches_table(df, final_cols):
     """
     Render simple matches table (for "Scrape Matches Only").

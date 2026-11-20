@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import re
+from functools import partial
 from src import FotMobScraper
 from src import team_stats_scraper
 from src.league_player_data import detect_url_type
@@ -10,6 +11,7 @@ from utils.app_helpers import (
     run_scraper_with_progress,
     prepare_dataframe,
     render_detailed_stats_table,
+    render_player_stats_table,
     render_simple_matches_table
 )
 
@@ -152,6 +154,12 @@ with tab_matches:
             round_num = None
             st.selectbox("Round / stage", ["No matches found"], disabled=True)
 
+    include_players = st.checkbox(
+        "Scrape individual player data",
+        help="With the Matches & Stats buttons, also builds a player stats file: one row per player "
+             "who played in each match (rating, minutes, goals, xG, passes, duels, ...)."
+    )
+
     # Scrape buttons
     col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
     with col_btn1:
@@ -179,6 +187,7 @@ with tab_matches:
                 )
                 if matches:
                     st.session_state.matches = matches
+                    st.session_state.player_rows = None
                     st.session_state.matches_source = (competition["name"] or league, season)
                     st.success(f"Successfully scraped {len(matches)} matches!")
                 else:
@@ -196,6 +205,7 @@ with tab_matches:
                 )
                 if matches:
                     st.session_state.matches = matches
+                    st.session_state.player_rows = None
                     st.session_state.matches_source = (competition["name"] or league, season)
                     st.success(f"Successfully scraped {len(matches)} matches for the entire season!")
                 else:
@@ -206,13 +216,16 @@ with tab_matches:
     if scrape_stats_btn:
         try:
             with st.spinner("Scraping matches and stats (this may take a while)..."):
-                matches = run_scraper_with_progress(
-                    st.session_state.scraper.get_matches_with_stats,
+                result = run_scraper_with_progress(
+                    partial(st.session_state.scraper.get_matches_with_stats,
+                            include_players=include_players),
                     season, round_num, active_league_URL,
                     progress_divisor=100
                 )
+                matches, player_rows = result if include_players else (result, None)
                 if matches:
                     st.session_state.matches = matches
+                    st.session_state.player_rows = player_rows
                     st.session_state.matches_source = (competition["name"] or league, season)
                     st.success(f"Successfully scraped {len(matches)} matches with stats!")
                 else:
@@ -227,13 +240,16 @@ with tab_matches:
         st.session_state["confirmed_heavy_scrape"] = None
         try:
             with st.spinner("Scraping full season with stats (this will take a LONG time)..."):
-                matches = run_scraper_with_progress(
-                    st.session_state.scraper.get_season_stats,
+                result = run_scraper_with_progress(
+                    partial(st.session_state.scraper.get_season_stats,
+                            include_players=include_players),
                     season, active_league_URL,
                     progress_divisor=100
                 )
+                matches, player_rows = result if include_players else (result, None)
                 if matches:
                     st.session_state.matches = matches
+                    st.session_state.player_rows = player_rows
                     st.session_state.matches_source = (competition["name"] or league, season)
                     st.success(f"Successfully scraped {len(matches)//2} matches for the entire season!")
                 else:
@@ -250,6 +266,8 @@ with tab_matches:
             st.success(f"Loaded data for {len(df)//2} matches ({len(df)} rows)")
             source_name, source_season = st.session_state.get("matches_source", (league, season))
             render_detailed_stats_table(df, final_cols, source_season, source_name)
+            if st.session_state.get("player_rows"):
+                render_player_stats_table(st.session_state.player_rows, source_season, source_name)
         else:
             render_simple_matches_table(df, final_cols)
 
@@ -324,6 +342,10 @@ with tab_matches:
         that went to extra time). Stats with an attempted count also get a `_total` column
         (e.g. `accurate_passes` / `accurate_passes_total`).
         National team matches include `fifa_rank` and `opponent_fifa_rank` at the time of the match.
+
+        Tick **Scrape individual player data** before a Matches & Stats scrape to also get a player file
+        (`..._player_stats.csv`): one row per player who played in each match, with the stats from FotMob's
+        player popup (full match only), joinable to the team file on `match_id` and `team_id`.
         """
         )
 

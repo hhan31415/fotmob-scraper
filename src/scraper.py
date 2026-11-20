@@ -86,7 +86,8 @@ class FotMobScraper:
             progress_callback
         )
 
-    def get_matches_with_stats(self, season, round_num, league_URL, progress_callback=None):
+    def get_matches_with_stats(self, season, round_num, league_URL, progress_callback=None,
+                               include_players=False):
         """
         Scrape matches and their stats for one round or stage.
         
@@ -95,15 +96,17 @@ class FotMobScraper:
             round_num (str or int): Round key, e.g. "1", "1/8", "final"
             league_URL (str): FotMob fixtures URL
             progress_callback (callable, optional): Callback for progress updates
+            include_players (bool): Also return one row per player per match
             
         Returns:
-            list: List of dictionaries, two per match (one for home, one for away)
+            list: List of dictionaries, two per match (one for home, one for away),
+                or (team_rows, player_rows) if include_players
         """
         if progress_callback:
             progress_callback(0, "Fetching match list...")
             
         matches = self.get_matches(season, round_num, league_URL)
-        return self._add_match_stats(matches, progress_callback)
+        return self._add_match_stats(matches, progress_callback, include_players)
 
     def get_matches_season(self, season, league_URL, progress_callback=None):
         """
@@ -123,7 +126,7 @@ class FotMobScraper:
             self.driver, season, league_URL, progress_callback
         )
 
-    def get_season_stats(self, season, league_URL, progress_callback=None):
+    def get_season_stats(self, season, league_URL, progress_callback=None, include_players=False):
         """
         Scrape match data and stats for an entire competition season.
 
@@ -131,27 +134,32 @@ class FotMobScraper:
             season (str): Season, e.g. "2025-2026" or "2026"
             league_URL (str): FotMob fixtures URL for the competition
             progress_callback (callable, optional): Callback for progress updates
+            include_players (bool): Also return one row per player per match
 
         Returns:
-            list: List of dictionaries, two per match (one for home, one for away)
+            list: List of dictionaries, two per match (one for home, one for away),
+                or (team_rows, player_rows) if include_players
         """
         if progress_callback:
             progress_callback(0, "Fetching match list...")
 
         matches = self.get_matches_season(season, league_URL)
-        return self._add_match_stats(matches, progress_callback)
+        return self._add_match_stats(matches, progress_callback, include_players)
 
-    def _add_match_stats(self, matches, progress_callback=None):
+    def _add_match_stats(self, matches, progress_callback=None, include_players=False):
         """
         Builds home/away rows for each match and adds stats for finished ones.
+        Player stats come from the same match page, so they cost no extra requests.
 
         Returns:
-            list: List of dictionaries, two per match (one for home, one for away)
+            list: List of dictionaries, two per match (one for home, one for away),
+                or (team_rows, player_rows) if include_players
         """
-        from utils.scraper_helpers import create_team_rows, add_stats_to_rows
+        from utils.scraper_helpers import create_team_rows, add_stats_to_rows, create_player_rows
 
         total_matches = len(matches)
         results = []
+        player_results = []
 
         for i, match in enumerate(matches):
             if progress_callback:
@@ -165,6 +173,8 @@ class FotMobScraper:
                 try:
                     stats = self.get_match_stats(match['url'])
                     add_stats_to_rows(home_row, away_row, stats)
+                    if include_players:
+                        player_results.extend(create_player_rows(match, stats))
                 except Exception as e:
                     print(f"Failed to get stats for {match['home']} vs {match['away']}: {e}")
 
@@ -174,6 +184,8 @@ class FotMobScraper:
         if progress_callback:
             progress_callback(100, "Finished scraping all matches!")
 
+        if include_players:
+            return results, player_results
         return results
     
     
