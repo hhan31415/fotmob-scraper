@@ -92,6 +92,7 @@ def scrape_player(driver, player_url, expected_season=None, progress_callback=No
             progress_callback(60, "Parsing player data...")
 
         result = _parse_player_data(next_data, player_id, player_url)
+        _use_main_league_stats(result)
         # Flag 1: did this player play any matches in the current season
         # at all? Uses mainLeague.season (already parsed into season_year)
         # and the Matches count from season_summary.
@@ -266,8 +267,30 @@ def _parse_player_data(next_data, player_id, player_url):
             result["season_summary"][title] = stat.get("value")
 
     # --- firstSeasonStats: detailed Shooting/Passing/Possession/Defending breakdown ---
-    first_season_stats = data.get("firstSeasonStats") or {}
-    stats_section = first_season_stats.get("statsSection") or {}
+    # (for the page's default tournament; scrape_player() swaps in the
+    # mainLeague tournament if that's a different one)
+    _parse_detailed_stats(data.get("firstSeasonStats") or {}, result)
+    default_entry = _first_entry(data)
+    result["stats_competition"] = default_entry.get("name")
+
+    return result
+
+
+def _first_entry(data):
+    """statSeasons[0].tournaments[0]: the tournament firstSeasonStats is for."""
+    seasons = data.get("statSeasons") or [{}]
+    return ((seasons[0] or {}).get("tournaments") or [{}])[0] or {}
+
+
+def _parse_detailed_stats(season_stats, result):
+    """
+    Fills result["detailed_stats"] / ["detailed_stats_per90"] from a
+    firstSeasonStats-shaped object (the page's firstSeasonStats, or the
+    /api/data/playerStats response for another tournament).
+    """
+    result["detailed_stats"] = {}
+    result["detailed_stats_per90"] = {}
+    stats_section = season_stats.get("statsSection") or {}
 
     for group in stats_section.get("items", []):
         group_title = group.get("title")
@@ -285,7 +308,7 @@ def _parse_player_data(next_data, player_id, player_url):
         result["detailed_stats_per90"][group_title] = group_per90
 
     # --- topStatCard: headline summary (Goals, Assists, Rating, Matches, Started, Minutes) ---
-    top_stat_card = first_season_stats.get("topStatCard") or {}
+    top_stat_card = season_stats.get("topStatCard") or {}
     top_stats = {}
     for stat_item in top_stat_card.get("items", []):
         stat_title = stat_item.get("title")
@@ -294,7 +317,55 @@ def _parse_player_data(next_data, player_id, player_url):
     if top_stats:
         result["detailed_stats"]["Top stats"] = top_stats
 
-    return result
+
+def _use_main_league_stats(result):
+    """
+    Makes the detailed stats match the mainLeague summary's tournament.
+
+    firstSeasonStats is for the first tournament the player played that
+    season, which isn't always their current league. E.g. Gonzalo Tapia
+    (on loan at Columbus Crew) played Brazil's Serie A first in 2026, so the
+    page's detailed stats were Serie A (11 matches, 0 goals) while the
+    summary was MLS (12 matches, 8 goals). The matching tournament's stats
+    come from /api/data/playerStats?playerId=<id>&seasonId=<entryId>, where
+    entryId is from statSeasons[].tournaments[].
+
+    Leaves the default stats in place if the tournament can't be found or
+    the request fails.
+    """
+    data = result.get("raw") or {}
+    main_league = data.get("mainLeague") or {}
+    league_id, season = main_league.get("leagueId"), main_league.get("season")
+    if league_id is None or not season:
+        return
+
+    target = None
+    for stat_season in data.get("statSeasons") or []:
+        if str(stat_season.get("seasonName")) != str(season):
+            continue
+        for tournament in stat_season.get("tournaments") or []:
+            if tournament.get("tournamentId") == league_id:
+                target = tournament
+                break
+
+    if not target or target.get("entryId") == _first_entry(data).get("entryId"):
+        return
+
+    from .next_data import _SESSION
+    url = (f"https://www.fotmob.com/api/data/playerStats"
+           f"?playerId={result.get('player_id')}&seasonId={target['entryId']}")
+    try:
+        season_stats = _SESSION.get(url, timeout=20).json()
+    except Exception as e:
+        print(f"Could not load {target.get('name')} stats for {result.get('name')}: {e}")
+        return
+    if not season_stats:
+        return
+
+    _parse_detailed_stats(season_stats, result)
+    result["stats_competition"] = target.get("name")
+    print(f"{result.get('name')}: using {target.get('name')} {season} stats "
+          f"(page default was {_first_entry(data).get('name')})")
 
 
 def flatten_player_for_csv(player_dict):
@@ -328,6 +399,7 @@ def flatten_player_for_csv(player_dict):
         "contract_end": player_dict.get("contract_end"),
         "season_league": player_dict.get("season_league"),
         "season_year": player_dict.get("season_year"),
+        "stats_competition": player_dict.get("stats_competition"),
     }
 
     for stat_name, value in player_dict.get("season_summary", {}).items():

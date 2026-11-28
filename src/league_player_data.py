@@ -246,7 +246,7 @@ def scrape_club_player_data(
     team_id = squad_data.get("team_id")
     squad_players = squad_data["players"]
     total = len(squad_players)
-    expected_season = squad_data.get("season")
+    expected_season = _club_stats_season(driver, squad_data)
     flat_rows = []
 
     for j, squad_player in enumerate(squad_players):
@@ -328,8 +328,44 @@ def scrape_club_player_data(
         "combined_csv_path": combined_path,
         "team_csv_paths": {team_name: team_csv},
         "league_name": squad_data.get("league_name"),
-        "season": squad_data.get("season"),
+        "season": expected_season,
         "teams_scraped": 1,
         "teams_skipped_resume": 0,
         "teams_failed": 0,
     }
+
+
+def _club_stats_season(driver, squad_data):
+    """
+    Season the club's player stats should belong to.
+
+    The squad page's latestSeason can run ahead of the season players' stats
+    are for (e.g. Columbus Crew showed "2027", MLS's upcoming Sprint Season,
+    while every player's mainLeague season was still "2026"), which marked
+    every player as stale and nulled their stats. Instead, use the primary
+    league's fixtures page: its current season, or the previous one if no
+    match has been played yet. Falls back to latestSeason if that fails.
+    """
+    from . import match_scraper
+
+    fallback = squad_data.get("season")
+    league_id = squad_data.get("primary_league_id")
+    if not league_id:
+        return fallback
+
+    try:
+        competition = match_scraper.fetch_competition(
+            driver, f"https://www.fotmob.com/leagues/{league_id}/fixtures"
+        )
+    except Exception as e:
+        print(f"Could not load league {league_id} season, using {fallback}: {e}")
+        return fallback
+
+    season = competition.get("season")
+    seasons = competition.get("seasons") or []
+    if not any(m["finished"] for m in competition.get("matches") or []) and len(seasons) > 1:
+        season = seasons[1]
+
+    if season and str(season) != str(fallback):
+        print(f"Squad page season is {fallback}; using league season {season} for player stats")
+    return season or fallback
